@@ -60,6 +60,7 @@
     <symbol id="i-stats" viewBox="0 0 24 24"><path d="M5 20v-5M10 20V9M15 20V4M20 20v-8"/></symbol>
     <symbol id="i-alert" viewBox="0 0 24 24"><path d="M10.3 4 2.3 18a2 2 0 0 0 1.7 3h16a2 2 0 0 0 1.7-3l-8-14a2 2 0 0 0-3.4 0z"/><path d="M12 9.5v4M12 17h.01"/></symbol>
     <symbol id="i-plus-square" viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="17" height="17" rx="4"/><path d="M12 8.5v7M8.5 12h7"/></symbol>
+    <symbol id="i-bell" viewBox="0 0 24 24"><path d="M6 16.5V11a6 6 0 1 1 12 0v5.5l1.6 2.1H4.4z"/><path d="M10 20.8a2.2 2.2 0 0 0 4 0"/></symbol>
     <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 11.5a8 8 0 0 0-14.5-4.3L3.5 9.5M3.5 4.5v5h5M4 12.5a8 8 0 0 0 14.5 4.3l2-2.3M20.5 19.5v-5h-5"/></symbol>
     <symbol id="logo" viewBox="0 0 64 64"><rect width="64" height="64" rx="16" fill="url(#brand-grad)"/><path d="M16 26v-4.5a5 5 0 0 1 5-5h26a5 5 0 0 1 5 5v21a5 5 0 0 1-5 5H35" fill="none" stroke="#fff" stroke-width="4.4" stroke-linecap="round"/><path d="M16 33.5A14.5 14.5 0 0 1 30.5 48M16 40.5a7.5 7.5 0 0 1 7.5 7.5" fill="none" stroke="#fff" stroke-width="4.4" stroke-linecap="round"/><circle cx="17.2" cy="46.8" r="2.6" fill="#fff"/></symbol>
   </svg>
@@ -160,6 +161,7 @@
           <div class="check" id="chk-encoder" data-state="wait"><i class="dot"></i><span class="check-name">Encodage</span><span class="check-val"></span></div>
           <div class="check" id="chk-hdr" data-state="wait" hidden><i class="dot"></i><span class="check-name">Couleurs HDR</span><span class="check-val"></span><button class="btn btn-ghost btn-xs" id="btn-hdr-calib" type="button" hidden>Recalibrer</button></div>
           <div class="check" id="chk-echo" data-state="wait"><i class="dot"></i><span class="check-name">Anti-écho</span><span class="check-val"></span></div>
+          <div class="check" id="chk-relay" data-state="wait" hidden><i class="dot"></i><span class="check-name">Relais</span><span class="check-val"></span></div>
           <div class="check" id="chk-browser" data-state="warn" hidden><i class="dot"></i><span class="check-name">Navigateur</span><span class="check-val">Utilise Chrome ou Edge pour le son du PC et le mini-retour</span></div>
           <details class="check-help">
             <summary>Écran noir, figé ou saccadé ?</summary>
@@ -239,6 +241,10 @@
         <p class="state-title" id="w-state-title"></p>
         <p class="state-sub" id="w-state-sub"></p>
         <button class="btn btn-ghost" id="w-state-btn" type="button" hidden></button>
+        <div class="notify-box" id="w-notify" hidden>
+          <button class="btn btn-primary" id="w-notify-btn" type="button"><svg class="i"><use href="#i-bell"/></svg>Me prévenir quand Ruben est en live</button>
+          <p class="state-hint" id="w-notify-hint"></p>
+        </div>
       </div>
 
       <span class="paused-pill" id="w-paused" hidden>Image en pause</span>
@@ -341,6 +347,11 @@
         <h4>Plein écran</h4>
         <div id="vs-fs"></div>
         <p class="hint">« Lecteur iPad » passe automatiquement en mini-lecteur quand tu quittes l’app.</p>
+      </section>
+      <section class="group" id="vs-push-group">
+        <h4>Notifications</h4>
+        <label class="row"><span>Me prévenir quand Ruben est en live</span><input type="checkbox" class="switch" id="vs-push"></label>
+        <p class="hint" id="vs-push-hint" hidden></p>
       </section>
       <section class="group">
         <h4>Appel</h4>

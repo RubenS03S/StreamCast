@@ -690,6 +690,10 @@ function renderChecks() {
   setCheck('chk-hdr', hdrState, hdrText, { hidden: !showHdr });
   $('#btn-hdr-calib').hidden = !showHdr || S.hdr.measuring || S.settings.hdr !== 'auto';
 
+  setCheck('chk-relay', S.relay ? 'ok' : 'off', S.relay
+    ? 'Activé : utilisé seulement si la connexion directe échoue'
+    : 'Non activé : connexion directe uniquement', { hidden: S.relay == null });
+
   const restricted = S.game?.getSettings().restrictOwnAudio;
   setCheck('chk-echo', restricted ? 'ok' : 'warn',
     restricted ? 'La voix des spectateurs ne repart pas vers eux' : 'Non pris en charge : mets Chrome ou Edge à jour',
@@ -822,6 +826,7 @@ async function createRoom({ fresh = false } = {}) {
   S.token = r.token;
   storage.set('hostRoom', { code: r.code, token: r.token });
   renderShare();
+  if (r.notified > 0) toast(`Notification envoyée à ${r.notified} appareil${r.notified > 1 ? 's' : ''}`, { icon: 'bell' });
 }
 
 async function newCode() {
@@ -918,7 +923,10 @@ async function startLive() {
   showView('view-host');
   renderRetour();
   renderChecks();
-  getIceServers();
+  getIceServers().then(({ relay }) => {
+    S.relay = relay;
+    renderChecks();
+  });
   if (S.mode === 'screen' && S.settings.hdr === 'auto' && hdrDisplay()) setTimeout(() => calibrate({ quiet: true }), 600);
 }
 

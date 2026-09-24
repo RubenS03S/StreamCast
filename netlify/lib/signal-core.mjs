@@ -7,7 +7,13 @@
 // local dev server (in-memory store). A store must implement:
 //   get(key) -> object | null, set(key, obj), del(key), list(prefix) -> string[]
 
+import { generateVapidKeys, sendPush } from './webpush.mjs';
+
 const LIVE_TIMEOUT_MS = 25_000;
+const NOTIFY_GAP_MS = 5 * 60_000;
+const MAX_SUBSCRIPTIONS = 20;
+// Only real browser push services receive our requests.
+const PUSH_HOSTS = /^https:\/\/([a-z0-9-]+\.)*(fcm\.googleapis\.com|push\.services\.mozilla\.com|push\.apple\.com|notify\.windows\.com)\//i;
 const HEARTBEAT_WRITE_MS = 4_000;
 const ROOM_RECLAIM_MS = 30 * 24 * 3600_000;
 const MAX_BODY = 96 * 1024;
@@ -48,40 +54,56 @@ const isLive = (room, now) => !!room && room.live && now - room.lastSeen < LIVE_
 
 let turnCache = null;
 
+// Browsers refuse TURN on port 53.
+const usableUrls = (urls) => (Array.isArray(urls) ? urls : [urls]).filter((u) => u && !/:53(\?|$)/.test(u));
+
+async function fetchTurn(env) {
+  // Cloudflare Realtime TURN
+  const keyId = env('CF_TURN_KEY_ID');
+  const apiToken = env('CF_TURN_API_TOKEN');
+  if (keyId && apiToken) {
+    const res = await fetch(`https://rtc.live.cloudflare.com/v1/turn/keys/${keyId}/credentials/generate-ice-servers`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${apiToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ttl: 86400 }),
+    });
+    if (res.ok) {
+      const json = await res.json();
+      return (Array.isArray(json.iceServers) ? json.iceServers : [json.iceServers]).filter(Boolean);
+    }
+  }
+  // Metered (metered.ca)
+  const domain = env('METERED_DOMAIN');
+  const key = env('METERED_API_KEY');
+  if (domain && key) {
+    const res = await fetch(`https://${domain}/api/v1/turn/credentials?apiKey=${encodeURIComponent(key)}`);
+    if (res.ok) return await res.json();
+  }
+  return [];
+}
+
 async function iceServers(env) {
   const servers = [...DEFAULT_STUN];
   const urls = env('TURN_URLS');
   if (urls) {
     servers.push({
-      urls: urls.split(',').map((u) => u.trim()).filter(Boolean),
+      urls: usableUrls(urls.split(',').map((u) => u.trim())),
       username: env('TURN_USERNAME') || undefined,
       credential: env('TURN_CREDENTIAL') || undefined,
     });
   }
-  const keyId = env('CF_TURN_KEY_ID');
-  const apiToken = env('CF_TURN_API_TOKEN');
-  if (keyId && apiToken) {
-    if (!turnCache || turnCache.expires < Date.now()) {
-      try {
-        const res = await fetch(
-          `https://rtc.live.cloudflare.com/v1/turn/keys/${keyId}/credentials/generate-ice-servers`,
-          {
-            method: 'POST',
-            headers: { Authorization: `Bearer ${apiToken}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ ttl: 86400 }),
-          },
-        );
-        if (res.ok) {
-          const json = await res.json();
-          const list = Array.isArray(json.iceServers) ? json.iceServers : [json.iceServers];
-          turnCache = { list: list.filter(Boolean), expires: Date.now() + 12 * 3600_000 };
-        }
-      } catch {
-        // TURN is optional: fall back to STUN only.
-      }
+  if (!turnCache || turnCache.expires < Date.now()) {
+    try {
+      const list = (await fetchTurn(env))
+        .map((s) => ({ ...s, urls: usableUrls(s.urls) }))
+        .filter((s) => s.urls.length);
+      turnCache = { list, expires: Date.now() + (list.length ? 12 * 3600_000 : 5 * 60_000) };
+    } catch {
+      // The relay is optional: direct connections still work without it.
+      turnCache = { list: [], expires: Date.now() + 60_000 };
     }
-    if (turnCache) servers.push(...turnCache.list);
   }
+  servers.push(...turnCache.list);
   return { iceServers: servers, relay: servers.length > DEFAULT_STUN.length };
 }
 
@@ -101,6 +123,39 @@ export function createSignaling(store, env = () => undefined) {
     return room;
   }
 
+  // Push keys: from the environment, or created once and kept in the store.
+  let vapidCache = null;
+  async function vapidKeys() {
+    if (vapidCache) return vapidCache;
+    let keys = env('VAPID_PUBLIC_KEY') && env('VAPID_PRIVATE_KEY')
+      ? { publicKey: env('VAPID_PUBLIC_KEY'), privateKey: env('VAPID_PRIVATE_KEY') }
+      : await store.get('config/vapid');
+    if (!keys?.publicKey) {
+      keys = generateVapidKeys();
+      await store.set('config/vapid', keys);
+    }
+    vapidCache = keys;
+    return keys;
+  }
+
+  // "Ruben est en live" on every device that asked for it.
+  async function notifyLive(code, name, origin) {
+    const keys = (await store.list(`push/${code}/`)).slice(0, MAX_SUBSCRIPTIONS);
+    if (!keys.length) return 0;
+    const vapid = { ...(await vapidKeys()), subject: env('VAPID_SUBJECT') || origin || 'mailto:streamcast@example.com' };
+    const payload = { title: `${name || 'Ruben'} est en live`, body: 'Touche pour regarder', url: `/${code}`, tag: `live-${code}` };
+    const results = await Promise.all(
+      keys.map(async (key) => {
+        const sub = await store.get(key);
+        if (!sub?.endpoint) return false;
+        const status = await sendPush(sub, payload, vapid);
+        if (status === 404 || status === 410 || status === 403) await store.del(key);
+        return status >= 200 && status < 300;
+      }),
+    );
+    return results.filter(Boolean).length;
+  }
+
   async function drain(code, id) {
     const keys = (await store.list(boxPrefix(code, id))).sort();
     if (!keys.length) return [];
@@ -114,7 +169,7 @@ export function createSignaling(store, env = () => undefined) {
       return iceServers(env);
     },
 
-    async create({ code, token, digits, name }) {
+    async create({ code, token, digits, name }, origin) {
       const now = Date.now();
       const wanted = digits === 4 ? 4 : 3;
       const hostToken = RE_TOKEN.test(token || '') ? token : randomString(32, 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789');
@@ -125,8 +180,13 @@ export function createSignaling(store, env = () => undefined) {
         const free = !room || room.token === hostToken || (!isLive(room, now) && now - room.lastSeen > ROOM_RECLAIM_MS);
         if (free) {
           await clearBoxes(code);
-          await store.set(roomKey(code), fresh);
-          return { code, token: hostToken };
+          // A new live (not a reload of the page during a live) notifies once.
+          const starting = !isLive(room, now) && now - (room?.notifiedAt || 0) > NOTIFY_GAP_MS;
+          const next = { ...fresh, notifiedAt: room?.notifiedAt || 0 };
+          await store.set(roomKey(code), next);
+          const notified = starting ? await notifyLive(code, fresh.name, origin).catch(() => 0) : 0;
+          if (notified) await store.set(roomKey(code), { ...next, notifiedAt: now });
+          return { code, token: hostToken, notified };
         }
       }
 
@@ -194,6 +254,28 @@ export function createSignaling(store, env = () => undefined) {
       return { messages, live: isLive(room, Date.now()) };
     },
 
+    async 'push-key'() {
+      return { publicKey: (await vapidKeys()).publicKey };
+    },
+
+    async 'push-subscribe'({ code, clientId, subscription }) {
+      if (!RE_CODE.test(code || '') || !RE_ID.test(clientId || '')) throw new HttpError(400, 'bad-request');
+      const endpoint = subscription?.endpoint;
+      const keys = subscription?.keys;
+      const allowed = PUSH_HOSTS.test(endpoint || '') || (env('PUSH_ALLOW_ANY') === '1' && /^https?:\/\//.test(endpoint || ''));
+      if (!allowed || typeof keys?.p256dh !== 'string' || typeof keys?.auth !== 'string') throw new HttpError(400, 'bad-subscription');
+      const existing = await store.list(`push/${code}/`);
+      if (existing.length >= MAX_SUBSCRIPTIONS && !existing.includes(`push/${code}/${clientId}`)) throw new HttpError(429, 'too-many');
+      await store.set(`push/${code}/${clientId}`, { endpoint, keys: { p256dh: keys.p256dh, auth: keys.auth }, since: Date.now() });
+      return { ok: true };
+    },
+
+    async 'push-unsubscribe'({ code, clientId }) {
+      if (!RE_CODE.test(code || '') || !RE_ID.test(clientId || '')) throw new HttpError(400, 'bad-request');
+      await store.del(`push/${code}/${clientId}`);
+      return { ok: true };
+    },
+
     async end({ code, token }) {
       const room = await requireHost(code, token);
       await store.set(roomKey(code), { ...room, live: false, lastSeen: Date.now() });
@@ -215,7 +297,11 @@ export function createSignaling(store, env = () => undefined) {
     const op = ops[body?.op];
     if (!op) return json({ error: 'unknown-op' }, 400);
     try {
-      return json(await op(body));
+      let origin = '';
+      try {
+        origin = new URL(request.url).origin;
+      } catch {}
+      return json(await op(body, origin));
     } catch (err) {
       if (err instanceof HttpError) return json({ error: err.message }, err.status);
       console.error('[signal]', body.op, err);

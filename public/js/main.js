@@ -107,7 +107,7 @@ function wireInstall() {
   matchMedia('(display-mode: standalone)').addEventListener?.('change', renderInstall);
   $$('.btn-install').forEach((b) => b.addEventListener('click', install));
   renderInstall();
-  if ('serviceWorker' in navigator && location.protocol === 'https:') {
+  if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
     navigator.serviceWorker.register('/sw.js').catch(() => {});
   }
 }

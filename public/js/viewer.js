@@ -7,6 +7,7 @@ import {
 import { isIPad, isIOS, deviceLabel, canElementFullscreen, fullscreenElement } from './device.js';
 import { toast, openDialog, segmented, floatReaction } from './ui.js';
 import { createMeter } from './audio.js';
+import { pushSupported, pushNeedsInstall, pushEnabled, enablePush, disablePush } from './push.js';
 
 const DEFAULT_PREFS = { quality: 'auto', latency: 'auto', fit: 'contain', stats: false, fsMode: 'app', game: 1, voice: 1, call: true };
 
@@ -33,6 +34,7 @@ const V = {
   onFailed: null,
   unread: 0,
   micBlocked: false,
+  iceFails: 0,
   micMeter: null,
   thumbEvery: 0,
   stopThumbs: null,
@@ -68,6 +70,7 @@ function setState(kind, title = '', sub = '', action = null) {
   }
   $('#player').classList.toggle('has-state', visible);
   if (visible) $('#w-paused').hidden = true;
+  renderNotify();
   $('#player').classList.toggle('no-video', !video().srcObject);
   if (visible) showControls(true);
 }
@@ -117,7 +120,12 @@ async function connectLoop() {
         setState('ended', 'Accès refusé', `${HOST_NAME} n’a pas accepté la demande`, { label: 'Retour', onClick: leave });
         return;
       }
-      setState('connecting', 'Connexion…', 'Nouvel essai');
+      if (V.iceFails >= 2) {
+        const { relay } = await getIceServers();
+        setState('connecting', 'Connexion difficile', relay
+          ? 'Nouvel essai par le relais…'
+          : 'Ce réseau bloque la connexion directe avec le PC. Essaie un autre Wi-Fi ou la 4G/5G.');
+      } else setState('connecting', 'Connexion…', 'Nouvel essai');
     } else if (res.reason === 'unknown') {
       setState('ended', 'Code inconnu', `Aucun live avec le code ${V.code}`, { label: 'Retour', onClick: leave });
       return;
@@ -259,6 +267,7 @@ function onPcState(pc) {
   const st = pc.connectionState;
   if (st === 'connected') {
     V.cancelDisc?.();
+    V.iceFails = 0;
     setState('live');
     requestWakeLock();
     V.onConnected?.();
@@ -271,6 +280,7 @@ function onPcState(pc) {
       if (V.pc === pc && pc.connectionState !== 'connected') lost();
     }, 4000);
   } else if (st === 'failed') {
+    V.iceFails++;
     lost();
   }
 }
@@ -842,6 +852,15 @@ function wireSettings() {
     V.prefs.fsMode = v;
     savePrefs();
   });
+  $('#w-notify-btn').addEventListener('click', turnOnPush);
+  $('#vs-push').addEventListener('change', async (e) => {
+    if (e.target.checked) await turnOnPush();
+    else {
+      await disablePush(V.code);
+      renderNotify();
+    }
+  });
+
   const call = $('#vs-call');
   call.checked = V.prefs.call;
   call.addEventListener('change', () => {
@@ -874,6 +893,63 @@ function wireSettings() {
     storage.set('name', V.name);
     send({ t: 'hello', name: V.name });
   });
+}
+
+// ======================================================== notifications
+function renderNotify() {
+  const box = $('#w-notify');
+  const btn = $('#w-notify-btn');
+  const hint = $('#w-notify-hint');
+  const show = V.status === 'waiting' && (pushSupported() || pushNeedsInstall());
+  box.hidden = !show;
+  if (show) {
+    const on = pushEnabled(V.code);
+    const denied = !pushNeedsInstall() && pushSupported() && Notification.permission === 'denied';
+    btn.hidden = on || denied;
+    hint.textContent = on
+      ? `Notification activée : tu seras prévenu au prochain live de ${HOST_NAME}`
+      : denied
+        ? 'Notifications bloquées : autorise-les dans les réglages de l’appareil'
+        : '';
+  }
+  const group = $('#vs-push-group');
+  group.hidden = !pushSupported() && !pushNeedsInstall();
+  const sw = $('#vs-push');
+  sw.checked = pushEnabled(V.code);
+  sw.disabled = pushNeedsInstall();
+  const settingsHint = $('#vs-push-hint');
+  settingsHint.hidden = !pushNeedsInstall();
+  settingsHint.textContent = 'Sur iPad et iPhone, ajoute d’abord StreamCast à l’écran d’accueil (Partager › Sur l’écran d’accueil), puis ouvre-le depuis l’icône.';
+}
+
+function showInstallSteps() {
+  $('#install-ios').hidden = false;
+  $('#install-desktop').hidden = true;
+  openDialog($('#dlg-install'));
+}
+
+// From a tap: the permission prompt needs it.
+async function turnOnPush() {
+  if (pushNeedsInstall()) {
+    showInstallSteps();
+    return false;
+  }
+  try {
+    await enablePush(V.code);
+    toast(`Tu seras prévenu quand ${HOST_NAME} lance un live`, { icon: 'bell' });
+    return true;
+  } catch (err) {
+    const why = err?.message;
+    toast(
+      why === 'denied'
+        ? 'Notifications refusées : autorise-les dans les réglages de l’appareil'
+        : 'Impossible d’activer les notifications pour le moment',
+      { type: 'warn' },
+    );
+    return false;
+  } finally {
+    renderNotify();
+  }
 }
 
 // ================================================================ leave

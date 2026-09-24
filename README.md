@@ -28,6 +28,8 @@ La vidéo et le son passent **directement** du PC à l'iPad (WebRTC, pair‑à�
 - **Retour du stream** : aperçu de la capture, vignette de ce que voit le spectateur (« Vue de Léa »), qualité de son réseau, et fenêtre **Mini‑retour** au‑dessus du jeu.
 - **Chat et réactions**, liste des spectateurs avec qualité reçue, exclusion, validation des spectateurs (option), sons et notifications Windows.
 - **Reconnexion automatique** si le réseau coupe ou si le live redémarre.
+- **Notification « Ruben est en live »** sur l'iPad / l'iPhone, qui ouvre le live d'un toucher.
+- **Relais de connexion** (optionnel) pour les réseaux qui bloquent la connexion directe.
 
 ### Limites imposées par Apple
 
@@ -50,12 +52,26 @@ Le dossier est prêt pour Netlify : `public/` pour le site, `netlify/functions/s
 - Relier le dépôt GitHub à un nouveau site Netlify, ou `netlify deploy --prod`.
 - Consommation : chaque déploiement compte ; ensuite, seules la mise en relation et une petite requête toutes les 2 à 4 secondes pendant un live passent par Netlify. La vidéo n'y passe jamais.
 
-### Serveur relais (optionnel)
+### Notification « Ruben est en live »
 
-La connexion directe marche sur la grande majorité des réseaux. Pour les réseaux mobiles très fermés, un relais TURN peut être ajouté via les variables d'environnement Netlify :
+Rien à configurer : les clés de notification sont créées automatiquement au premier usage et gardées dans le stockage Netlify (ou fournies via `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY`).
 
-- Cloudflare : `CF_TURN_KEY_ID` et `CF_TURN_API_TOKEN`
-- ou n'importe quel serveur TURN : `TURN_URLS` (séparées par des virgules), `TURN_USERNAME`, `TURN_CREDENTIAL`
+- Sur l'iPad / l'iPhone, Apple n'autorise les notifications que pour l'app **ajoutée à l'écran d'accueil** : l'ouvrir depuis l'icône, puis **Me prévenir quand Ruben est en live** (écran d'attente ou Réglages › Notifications).
+- Au lancement d'un live, chaque appareil inscrit reçoit la notification ; la toucher ouvre le live directement. Un rechargement de la page pendant un live ne renvoie pas de notification, et deux lives rapprochés (moins de 5 minutes) n'en envoient qu'une.
+
+### Relais de connexion (optionnel)
+
+La connexion directe PC → iPad marche sur la plupart des réseaux. Certains (4G/5G, Wi‑Fi d'hôtel, d'école ou d'entreprise) la bloquent : le relais fait alors passer le stream par un serveur, seulement dans ces cas-là. La ligne **Relais** de la vérification indique s'il est activé.
+
+Pour l'activer avec Cloudflare :
+
+1. Crée un compte gratuit sur [dash.cloudflare.com](https://dash.cloudflare.com).
+2. Section **Realtime** › **TURN** : crée une clé TURN et note le **TURN Token ID** et l'**API Token** affichés.
+3. Dans Netlify : **Project configuration › Environment variables**, ajoute `CF_TURN_KEY_ID` (TURN Token ID) et `CF_TURN_API_TOKEN` (API Token), puis redéploie.
+
+Cloudflare offre 1 000 Go par mois (0,05 $/Go au‑delà). Le relais ne sert que lorsque la connexion directe échoue ; à titre indicatif, un live en 1440p consomme environ 9 Go par heure.
+
+Autres fournisseurs possibles : Metered (`METERED_DOMAIN`, `METERED_API_KEY`) ou n'importe quel serveur TURN (`TURN_URLS` séparées par des virgules, `TURN_USERNAME`, `TURN_CREDENTIAL`).
 
 ## Conseils pour la meilleure qualité
 

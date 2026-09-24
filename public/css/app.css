@@ -1651,6 +1651,24 @@ input[type="range"] {
   pointer-events: none;
 }
 
+.notify-box {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.state-hint {
+  margin: 0;
+  max-width: 340px;
+  color: var(--text-2);
+  font-size: 14px;
+}
+
+.state-hint:empty {
+  display: none;
+}
+
 .unmute {
   position: absolute;
   z-index: 6;
