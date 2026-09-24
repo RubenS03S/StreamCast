@@ -307,6 +307,9 @@ export async function receiverStats(pc, prev) {
     out.bitrate = dt > 0 ? (((out.bytes - prev.bytes) + ((out.audioBytes || 0) - (prev.audioBytes || 0))) * 8) / dt : 0;
     const decoded = out.framesDecoded - prev.framesDecoded;
     const received = out.framesReceived - prev.framesReceived;
+    // Frames actually decoded per second (Safari's framesPerSecond can be
+    // missing or lag behind).
+    if (dt > 0 && decoded >= 0) out.fps = decoded / dt;
     out.dropRate = received > 0 ? Math.max(0, out.framesDropped - prev.framesDropped) / received : 0;
     out.decodeMs = decoded > 0 && out.decodeTime != null ? ((out.decodeTime - prev.decodeTime) / decoded) * 1000 : prev.decodeMs;
     const emitted = (out.jbEmitted || 0) - (prev.jbEmitted || 0);

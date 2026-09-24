@@ -758,8 +758,36 @@ input[type="range"] {
 }
 
 .retour-head .btn {
-  margin-left: auto;
   flex: none;
+}
+
+#btn-image {
+  margin-left: auto;
+}
+
+#btn-image[aria-pressed="true"] {
+  background: var(--accent-soft);
+  border-color: var(--accent-line);
+}
+
+.image-panel {
+  display: grid;
+  gap: 2px;
+  padding: 10px 16px 14px;
+  border-radius: 18px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+
+.image-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.image-panel .hint {
+  margin-top: 8px;
 }
 
 .retour.collapsed .preview {
@@ -1536,6 +1564,13 @@ input[type="range"] {
 
 .player.idle .controls {
   transform: translate(-50%, 12px);
+}
+
+/* Hidden controls stop costing anything (no blur over the moving video). */
+.player.idle .controls,
+.player.idle .overlay-top {
+  visibility: hidden;
+  transition: opacity 0.3s ease, transform 0.3s ease, visibility 0s linear 0.3s;
 }
 
 .react-picker {

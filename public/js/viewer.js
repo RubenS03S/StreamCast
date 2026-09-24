@@ -378,26 +378,43 @@ function applyHostState() {
 // Small snapshots of what this screen shows, sent to Ruben's "retour" so he
 // can check what the spectateur really sees. Only while he asks for them.
 function applyThumbs(ms) {
-  ms = ms > 0 ? Math.max(1500, ms) : 0;
+  ms = ms > 0 ? Math.max(4000, ms) : 0;
   if (V.thumbEvery === ms) return;
   V.thumbEvery = ms;
   V.stopThumbs?.();
   V.stopThumbs = ms ? every(sendThumb, ms) : null;
 }
 
-function sendThumb() {
+// Kept light so it never makes the live stutter: small, asynchronous, and
+// at most every 4 seconds.
+async function sendThumb() {
   const v = video();
-  if (V.dc?.readyState !== 'open' || !v.videoWidth || document.hidden) return;
-  const w = 384;
-  const h = Math.round((w * v.videoHeight) / v.videoWidth);
-  const c = (V.thumbCanvas ||= document.createElement('canvas'));
-  c.width = w;
-  c.height = h;
+  if (V.thumbBusy || V.dc?.readyState !== 'open' || !v.videoWidth || document.hidden) return;
+  V.thumbBusy = true;
   try {
-    c.getContext('2d').drawImage(v, 0, 0, w, h);
-    const url = c.toDataURL('image/jpeg', 0.6);
-    if (url.length < 60000) send({ t: 'thumb', url });
-  } catch {}
+    const w = 320;
+    const h = Math.round((w * v.videoHeight) / v.videoWidth);
+    let src = v;
+    try {
+      src = await createImageBitmap(v, { resizeWidth: w, resizeHeight: h, resizeQuality: 'low' });
+    } catch {}
+    const c = (V.thumbCanvas ||= document.createElement('canvas'));
+    c.width = w;
+    c.height = h;
+    c.getContext('2d').drawImage(src, 0, 0, w, h);
+    src.close?.();
+    const blob = await new Promise((resolve) => c.toBlob(resolve, 'image/jpeg', 0.6));
+    if (!blob || blob.size > 45000) return;
+    const url = await new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.readAsDataURL(blob);
+    });
+    send({ t: 'thumb', url });
+  } catch {
+  } finally {
+    V.thumbBusy = false;
+  }
 }
 
 // ================================================================ playback
@@ -476,21 +493,41 @@ function onFullscreenChange() {
 }
 
 // ================================================================== PiP
+// iPhone / iPad: Safari only accepts its own presentation-mode API for a live
+// (WebRTC) video; the standard API is for other browsers.
 async function togglePip() {
   const v = video();
+  const apple = typeof v.webkitSetPresentationMode === 'function';
   try {
     if (document.pictureInPictureElement) return await document.exitPictureInPicture();
-    if (v.webkitPresentationMode === 'picture-in-picture') return v.webkitSetPresentationMode('inline');
+    if (apple && v.webkitPresentationMode === 'picture-in-picture') return v.webkitSetPresentationMode('inline');
+    if (apple) {
+      if (v.paused) v.play().catch(() => {});
+      v.webkitSetPresentationMode('picture-in-picture');
+      setTimeout(() => {
+        if (v.webkitPresentationMode !== 'picture-in-picture') pipFallback();
+      }, 700);
+      return;
+    }
     if (document.pictureInPictureEnabled && v.requestPictureInPicture) return await v.requestPictureInPicture();
-    if (v.webkitSupportsPresentationMode?.('picture-in-picture')) return v.webkitSetPresentationMode('picture-in-picture');
-    toast('Mini-lecteur non disponible sur ce navigateur', { type: 'warn' });
+    pipFallback();
   } catch {
-    toast('Mini-lecteur indisponible pour le moment', { type: 'warn' });
+    pipFallback();
   }
 }
 
+function pipFallback() {
+  toast(
+    isIOS
+      ? 'Mini-lecteur : passe en plein écran puis glisse vers le haut pour quitter l’app (Réglages iOS › Général › Image dans l’image › Démarrer automatiquement)'
+      : 'Mini-lecteur non disponible sur ce navigateur',
+    { type: 'warn', timeout: 6000 },
+  );
+}
+
 const pipSupported = () =>
-  !!((document.pictureInPictureEnabled && video().requestPictureInPicture) || video().webkitSupportsPresentationMode?.('picture-in-picture'));
+  typeof video().webkitSetPresentationMode === 'function' ||
+  !!(document.pictureInPictureEnabled && video().requestPictureInPicture);
 
 function setupMediaSession() {
   if (!('mediaSession' in navigator)) return;
@@ -1066,7 +1103,16 @@ export function initViewer({ show, exit }) {
   document.addEventListener('webkitfullscreenchange', onFullscreenChange);
   v.addEventListener('webkitendfullscreen', () => setTimeout(resumePlayback, 300));
   v.addEventListener('leavepictureinpicture', () => setTimeout(resumePlayback, 300));
-  v.addEventListener('webkitpresentationmodechanged', () => setTimeout(resumePlayback, 300));
+  v.addEventListener('webkitpresentationmodechanged', () => {
+    pip.classList.toggle('on', v.webkitPresentationMode === 'picture-in-picture');
+    setTimeout(resumePlayback, 300);
+  });
+  // iOS pauses page videos in the background but lets them play again:
+  // keep the live running in the mini-lecteur.
+  v.addEventListener('pause', () => {
+    const pipOn = v.webkitPresentationMode === 'picture-in-picture' || !!document.pictureInPictureElement;
+    if (V.active && v.srcObject && (pipOn || document.hidden)) setTimeout(() => v.play().catch(() => {}), 250);
+  });
   v.addEventListener('enterpictureinpicture', () => pip.classList.add('on'));
   v.addEventListener('leavepictureinpicture', () => pip.classList.remove('on'));
 

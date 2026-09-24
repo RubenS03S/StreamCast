@@ -126,7 +126,17 @@
           <div class="retour-head">
             <span class="retour-title">Retour</span>
             <span class="pill" id="src-info">—</span>
+            <button class="btn btn-ghost btn-sm" id="btn-image" type="button" aria-pressed="false"><svg class="i"><use href="#i-sliders"/></svg><span>Image</span></button>
             <button class="btn btn-ghost btn-sm" id="btn-retour-toggle" type="button"><svg class="i"><use href="#i-eye-off"/></svg><span class="label">Masquer</span></button>
+          </div>
+          <div class="image-panel" id="image-panel" hidden>
+            <div class="row range-row"><span>Luminosité</span><input type="range" min="25" max="100" step="1" id="img-bright"><output></output></div>
+            <div class="row range-row"><span>Couleurs</span><input type="range" min="100" max="160" step="1" id="img-sat"><output></output></div>
+            <div class="image-actions">
+              <button class="btn btn-ghost btn-sm" id="img-auto" type="button">Mesurer automatiquement</button>
+              <button class="btn btn-ghost btn-sm" id="img-reset" type="button">Image d’origine</button>
+            </div>
+            <p class="hint">Compare avec la vue du spectateur : baisse la luminosité jusqu’à retrouver l’image de ton écran.</p>
           </div>
           <div class="preview" id="preview-wrap">
             <video id="preview" muted playsinline autoplay disablepictureinpicture></video>
@@ -306,9 +316,8 @@
       <section class="group">
         <h4>Couleurs HDR</h4>
         <div id="hs-hdr"></div>
-        <div class="row range-row" id="hs-hdr-k-row" hidden><span>Intensité</span><input type="range" min="0" max="100" step="5" id="hs-hdr-k"><output></output></div>
         <div class="row"><span>Mesurer mon écran</span><button class="btn btn-ghost btn-sm" id="hs-hdr-calib" type="button">Calibrer</button></div>
-        <p class="hint">Avec le HDR de Windows, l’image peut arriver trop claire et délavée chez le spectateur. En Auto, StreamCast mesure ton écran au lancement du live et corrige les couleurs avant l’envoi. Autre solution : <b>Win + Alt + B</b> coupe le HDR le temps du live.</p>
+        <p class="hint">Avec le HDR de Windows, l’image peut arriver trop claire et délavée chez le spectateur. En Auto, StreamCast mesure ton écran au lancement du live et corrige les couleurs avant l’envoi. Pendant le live, le bouton <b>Image</b> au-dessus du retour règle la luminosité et les couleurs à l’œil. Autre solution : <b>Win + Alt + B</b> coupe le HDR le temps du live.</p>
       </section>
       <section class="group">
         <h4>Accès</h4>

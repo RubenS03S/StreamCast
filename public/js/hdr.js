@@ -21,7 +21,7 @@ const toLinear = (c) => (c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055
 
 // --------------------------------------------------------------- pipeline
 const WORKER = `
-let gl, canvas, uK, k = 1, maxH = 0, w = 0, h = 0, ready = false, frames = 0, busy = 0;
+let gl, canvas, uK, uSat, k = 1, sat = 1, maxH = 0, w = 0, h = 0, ready = false, frames = 0, busy = 0;
 const VS = \`#version 300 es
 out vec2 uv;
 void main() {
@@ -35,12 +35,16 @@ in vec2 uv;
 out vec4 color;
 uniform sampler2D tex;
 uniform float k;
+uniform float sat;
 vec3 toLin(vec3 c) { return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(0.04045, c)); }
 vec3 toSrgb(vec3 l) { l = clamp(l, 0.0, 1.0); return mix(l * 12.92, 1.055 * pow(l, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, l)); }
 void main() {
   vec3 lin = toLin(texture(tex, uv).rgb);
   // Undo the SDR brightness gain; the shoulder keeps white at white.
   vec3 fixedLin = lin / k + (1.0 - 1.0 / k) * pow(lin, vec3(6.0));
+  // Colour intensity: washed-out captures also lose saturation.
+  float luma = dot(fixedLin, vec3(0.2126, 0.7152, 0.0722));
+  fixedLin = max(vec3(0.0), mix(vec3(luma), fixedLin, sat));
   color = vec4(toSrgb(fixedLin), 1.0);
 }\`;
 
@@ -63,6 +67,7 @@ function setup() {
   if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog));
   gl.useProgram(prog);
   uK = gl.getUniformLocation(prog, 'k');
+  uSat = gl.getUniformLocation(prog, 'sat');
   gl.bindVertexArray(gl.createVertexArray());
   const tex = gl.createTexture();
   gl.bindTexture(gl.TEXTURE_2D, tex);
@@ -100,12 +105,13 @@ async function run(readable, writable) {
     const fw = frame.displayWidth;
     const fh = frame.displayHeight;
     const scale = maxH && fh > maxH ? maxH / fh : 1;
-    if (ready && (k > 1.001 || scale < 1)) {
+    if (ready && (k > 1.001 || Math.abs(sat - 1) > 0.001 || scale < 1)) {
       const t0 = performance.now();
       try {
         resize(Math.round((fw * scale) / 2) * 2, Math.round((fh * scale) / 2) * 2);
         gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, frame);
         gl.uniform1f(uK, Math.max(1, k));
+        gl.uniform1f(uSat, sat);
         gl.drawArrays(gl.TRIANGLES, 0, 3);
         out = new VideoFrame(canvas, { timestamp: frame.timestamp, alpha: 'discard' });
         frame.close();
@@ -139,12 +145,13 @@ setInterval(() => {
 
 onmessage = ({ data }) => {
   if ('k' in data) k = data.k;
+  if ('sat' in data) sat = data.sat;
   if ('maxHeight' in data) maxH = data.maxHeight;
   if (data.readable) run(data.readable, data.writable);
 };
 `;
 
-export function createColorPipeline(track, { k = 1, maxHeight = 0 } = {}) {
+export function createColorPipeline(track, { k = 1, sat = 1, maxHeight = 0 } = {}) {
   const processor = new MediaStreamTrackProcessor({ track, maxBufferSize: 2 });
   const generator = new MediaStreamTrackGenerator({ kind: 'video' });
   const worker = new Worker(URL.createObjectURL(new Blob([WORKER], { type: 'text/javascript' })));
@@ -157,6 +164,9 @@ export function createColorPipeline(track, { k = 1, maxHeight = 0 } = {}) {
     onSize: null,
     setK(value) {
       worker.postMessage({ k: value });
+    },
+    setSat(value) {
+      worker.postMessage({ sat: value });
     },
     setMaxHeight(value) {
       worker.postMessage({ maxHeight: value });
@@ -180,7 +190,7 @@ export function createColorPipeline(track, { k = 1, maxHeight = 0 } = {}) {
   worker.onerror = (e) => {
     pipe.error = e.message || 'worker';
   };
-  worker.postMessage({ readable: processor.readable, writable: generator.writable, k, maxHeight }, [
+  worker.postMessage({ readable: processor.readable, writable: generator.writable, k, sat, maxHeight }, [
     processor.readable,
     generator.writable,
   ]);

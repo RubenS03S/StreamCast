@@ -26,7 +26,8 @@ const DEFAULT_SETTINGS = {
   viewerVolume: 1,
   preview: true,
   hdr: 'auto',
-  hdrStrength: 0.5,
+  imgBright: 1,
+  imgSat: 1,
 };
 
 const S = {
@@ -293,32 +294,42 @@ class Peer {
     const now = Date.now();
     const t = this.target();
     const vs = this.viewerStats && now - (this.viewerStats.at || 0) < 5000 ? this.viewerStats : null;
-    const a = (this.ad ||= { cpu: 0, bw: 0, loss: 0, viewer: 0, good: 0, last: now, hold: 0, downs: [] });
+    const a = (this.ad ||= { cpu: 0, bw: 0, loss: 0, decode: 0, good: 0, last: now, hold: 0, downs: [] });
     const src = Math.min(st.srcFps || t.fps, t.fps);
+    const loss = Math.max(st.loss ?? 0, vs?.loss ?? 0);
+
+    // Reasons to lower the resolution. Jitter and short freezes on a mobile
+    // or 5G link are NOT among them: a smaller picture does not fix them,
+    // it only makes the image blurry.
     a.cpu = st.limitation === 'cpu' ? a.cpu + 1 : 0;
     a.bw = st.limitation === 'bandwidth' && st.fps < src * 0.85 ? a.bw + 1 : 0;
-    a.loss = (st.loss ?? 0) > 0.06 ? a.loss + 1 : 0;
-    const viewerBad = !!vs && st.fps > 20 && (vs.fps < st.fps * 0.8 || vs.dropRate > 0.08 || vs.newFreezes > 0);
-    a.viewer = viewerBad ? a.viewer + 1 : 0;
-    // The iPad's own connection (often Wi-Fi far from the box): lighter
-    // frames get through a weak link with fewer stutters.
-    const viewerNet = !!vs && ((vs.loss ?? 0) > 0.04 || (vs.jitterMs ?? 0) > 150);
-    a.net = viewerNet ? (a.net || 0) + 1 : 0;
+    a.loss = loss > 0.06 ? a.loss + 1 : 0;
+    // The spectateur's device cannot decode fast enough while the network is fine.
+    const decodeBad = !!vs && vs.fps > 0 && st.fps > 30 && loss < 0.02 && vs.fps < st.fps * 0.75;
+    a.decode = decodeBad ? a.decode + 1 : 0;
 
-    if ((a.cpu >= 3 || a.bw >= 3 || a.loss >= 4 || a.viewer >= 3 || a.net >= 4) && this.level < t.ladder.length - 1 && now - a.last > 2500) {
-      this.level++;
-      a.downs = a.downs.filter((x) => now - x < 120000);
-      a.downs.push(now);
-      a.hold = now + Math.min(120000, 15000 * a.downs.length);
-      Object.assign(a, { cpu: 0, bw: 0, loss: 0, viewer: 0, net: 0, good: 0, last: now });
-      this.applyParams();
-      return;
+    const reason = a.cpu >= 3 ? 'cpu' : a.bw >= 3 ? 'bw' : a.loss >= 4 ? 'loss' : a.decode >= 5 ? 'decode' : null;
+    const next = t.ladder[this.level + 1];
+    if (reason && next && now - a.last > 4000) {
+      // Never below 720p for network trouble (1080p for a slow decoder),
+      // unless the connection is really too slow for 720p.
+      const starving = reason === 'bw' && st.targetBitrate && st.targetBitrate < bitrateFor(720, t.fps, this.codec) * 0.4;
+      const floor = reason === 'cpu' || starving ? 0 : reason === 'decode' ? 1080 : 720;
+      if (next >= floor) {
+        this.level++;
+        a.downs = a.downs.filter((x) => now - x < 120000);
+        a.downs.push(now);
+        a.hold = now + Math.min(90000, 12000 * a.downs.length);
+        Object.assign(a, { cpu: 0, bw: 0, loss: 0, decode: 0, good: 0, last: now });
+        this.applyParams();
+        return;
+      }
     }
-    const healthy = st.limitation === 'none' && (st.loss ?? 0) < 0.02 && !viewerBad && !viewerNet;
+    const healthy = st.limitation !== 'cpu' && !(st.limitation === 'bandwidth' && st.fps < src * 0.85) && loss < 0.03 && !decodeBad;
     a.good = healthy ? a.good + 1 : 0;
-    if (this.level > 0 && a.good >= 10 && now > a.hold) {
-      const next = t.ladder[this.level - 1];
-      if (!st.available || st.available >= bitrateFor(next, t.fps, this.codec) * 0.6) {
+    if (this.level > 0 && a.good >= 8 && now > a.hold) {
+      const up = t.ladder[this.level - 1];
+      if (!st.available || st.available >= bitrateFor(up, t.fps, this.codec) * 0.5) {
         this.level--;
         a.good = 0;
         a.last = now;
@@ -494,10 +505,13 @@ function useCapture(stream) {
 // Correction factor for an HDR desktop (1 = none).
 function hdrK() {
   if (S.mode !== 'screen' || S.settings.hdr === 'off') return 1;
-  if (S.settings.hdr === 'manual') return 1 + 3 * clamp(S.settings.hdrStrength, 0, 1);
+  if (S.settings.hdr === 'manual') return 1 / clamp(S.settings.imgBright, 0.25, 1);
   const m = S.hdr.measured;
   return m?.ok && m.k >= 1.08 ? m.k : 1;
 }
+
+const hdrSat = () =>
+  S.mode === 'screen' && S.settings.hdr === 'manual' ? clamp(S.settings.imgSat, 1, 1.6) : 1;
 
 // While correcting, 4K is brought down to 1440p on the GPU (what the iPad
 // shows anyway) unless a 4K or text preset is chosen.
@@ -536,10 +550,11 @@ function setOut(track) {
 function applyColor() {
   if (!S.video) return;
   const k = hdrK();
-  const need = k > 1.001 && canProcessVideo() && S.video.readyState === 'live';
+  const sat = hdrSat();
+  const need = (k > 1.001 || sat > 1.001) && canProcessVideo() && S.video.readyState === 'live';
   if (need && !S.pipe) {
     try {
-      S.pipe = createColorPipeline(S.video, { k, maxHeight: pipeMaxHeight() });
+      S.pipe = createColorPipeline(S.video, { k, sat, maxHeight: pipeMaxHeight() });
       S.pipe.onSize = () => {
         for (const peer of S.peers.values()) peer.applyParams();
       };
@@ -551,6 +566,7 @@ function applyColor() {
     }
   } else if (need) {
     S.pipe.setK(k);
+    S.pipe.setSat(sat);
     S.pipe.setMaxHeight(pipeMaxHeight());
   } else if (S.pipe) {
     const old = S.pipe;
@@ -570,6 +586,12 @@ async function calibrate({ quiet = false } = {}) {
   const m = await measureSdrScale(S.video);
   S.hdr.measuring = false;
   S.hdr.measured = m;
+  if (m.ok) {
+    S.settings.imgBright = m.k >= 1.08 ? 1 / m.k : 1;
+    S.settings.imgSat = 1;
+    saveSettings();
+    renderImagePanel();
+  }
   applyColor();
   if (m.ok && m.k >= 1.08) toast('Écran HDR : couleurs corrigées pour le spectateur', { icon: 'check' });
   else if (!quiet) {
@@ -607,6 +629,53 @@ async function switchCamera() {
   S.facing = S.facing === 'user' ? 'environment' : 'user';
   S.video?.stop();
   await changeSource();
+}
+
+// ============================================================= image
+// "Image" panel under the retour: brightness and colour, adjusted by eye
+// while comparing with what the spectateur sees.
+function renderImagePanel() {
+  const bright = $('#img-bright');
+  const sat = $('#img-sat');
+  bright.value = Math.round(clamp(S.settings.imgBright, 0.25, 1) * 100);
+  sat.value = Math.round(clamp(S.settings.imgSat, 1, 1.6) * 100);
+  bright.closest('.range-row').querySelector('output').textContent = `${bright.value} %`;
+  sat.closest('.range-row').querySelector('output').textContent = `${sat.value} %`;
+}
+
+function wireImagePanel() {
+  const panel = $('#image-panel');
+  $('#btn-image').addEventListener('click', () => {
+    panel.hidden = !panel.hidden;
+    $('#btn-image').setAttribute('aria-pressed', String(!panel.hidden));
+    renderImagePanel();
+  });
+  const onInput = () => {
+    S.settings.imgBright = $('#img-bright').value / 100;
+    S.settings.imgSat = $('#img-sat').value / 100;
+    S.settings.hdr = 'manual';
+    S.setHdrUi?.('manual');
+    renderImagePanel();
+    applyColor();
+  };
+  $('#img-bright').addEventListener('input', onInput);
+  $('#img-sat').addEventListener('input', onInput);
+  $('#img-bright').addEventListener('change', saveSettings);
+  $('#img-sat').addEventListener('change', saveSettings);
+  $('#img-auto').addEventListener('click', () => {
+    S.settings.hdr = 'auto';
+    saveSettings();
+    S.setHdrUi?.('auto');
+    calibrate();
+  });
+  $('#img-reset').addEventListener('click', () => {
+    Object.assign(S.settings, { hdr: 'manual', imgBright: 1, imgSat: 1 });
+    saveSettings();
+    S.setHdrUi?.('manual');
+    renderImagePanel();
+    applyColor();
+  });
+  renderImagePanel();
 }
 
 // ============================================================ checklist
@@ -676,6 +745,7 @@ function renderChecks() {
   }
 
   const showHdr = screen && (hdrDisplay() || S.settings.hdr !== 'auto' || !!S.hdr.measured);
+  $('#btn-image').hidden = !screen;
   const k = hdrK();
   let hdrState = 'wait';
   let hdrText = 'Écran HDR détecté';
@@ -684,7 +754,8 @@ function renderChecks() {
   else if (k > 1.001 && !canProcessVideo()) [hdrState, hdrText] = ['warn', 'Correction impossible dans ce navigateur : coupe le HDR avec Win + Alt + B'];
   else if (S.pipe?.error) [hdrState, hdrText] = ['warn', 'Correction indisponible sur cette carte graphique : coupe le HDR avec Win + Alt + B'];
   else if (S.pipe && S.hdr.reduced && S.hdr.slow >= 3) [hdrState, hdrText] = ['warn', `Correction trop lente pour 60 FPS (${S.pipe.fps} FPS) : coupe le HDR avec Win + Alt + B`];
-  else if (k > 1.001) [hdrState, hdrText] = ['ok', `Correction active${S.settings.hdr === 'manual' ? ' (manuelle)' : ''}${S.pipe?.fps ? ` · ${S.pipe.fps} FPS` : ''}`];
+  else if (S.settings.hdr === 'manual') [hdrState, hdrText] = ['ok', k > 1.001 || hdrSat() > 1.001 ? `Réglage manuel · luminosité ${Math.round(100 / k)} %${S.pipe?.fps ? ` · ${S.pipe.fps} FPS` : ''}` : 'Image d’origine'];
+  else if (k > 1.001) [hdrState, hdrText] = ['ok', `Correction active${S.pipe?.fps ? ` · ${S.pipe.fps} FPS` : ''}`];
   else if (S.hdr.measured?.ok) [hdrState, hdrText] = ['ok', 'Couleurs correctes, aucune correction nécessaire'];
   else if (S.hdr.measured) [hdrState, hdrText] = ['warn', 'Mesure impossible : garde StreamCast visible sur l’écran partagé, puis Recalibrer'];
   setCheck('chk-hdr', hdrState, hdrText, { hidden: !showHdr });
@@ -1236,7 +1307,6 @@ function wireSettings() {
     for (const p of S.peers.values()) p.audioEl?.setSinkId?.(S.settings.sinkId).catch(() => {});
   });
 
-  const hdrRow = $('#hs-hdr-k-row');
   const setHdrUi = segmented(
     $('#hs-hdr'),
     [{ id: 'auto', label: 'Auto' }, { id: 'manual', label: 'Manuelle' }, { id: 'off', label: 'Désactivée' }],
@@ -1244,19 +1314,16 @@ function wireSettings() {
     (id) => {
       S.settings.hdr = id;
       saveSettings();
-      hdrRow.hidden = id !== 'manual';
       applyColor();
       if (id === 'auto' && S.live && !S.hdr.measured) calibrate();
     },
   );
-  hdrRow.hidden = S.settings.hdr !== 'manual';
-  bindRange('#hs-hdr-k', 'hdrStrength', () => applyColor());
+  S.setHdrUi = setHdrUi;
   $('#hs-hdr-calib').addEventListener('click', () => {
     if (!S.live) return toast('Lance le live pour mesurer ton écran');
     S.settings.hdr = 'auto';
     saveSettings();
     setHdrUi('auto');
-    hdrRow.hidden = true;
     closeDialog($('#dlg-host'));
     setTimeout(calibrate, 300);
   });
@@ -1543,6 +1610,7 @@ export function initHost({ show }) {
   $('#btn-reshare').addEventListener('click', changeSource);
   $('#btn-surface-fix').addEventListener('click', changeSource);
   $('#btn-hdr-calib').addEventListener('click', () => calibrate());
+  wireImagePanel();
   $('#ctl-mini').addEventListener('click', toggleMini);
   $('#preview').addEventListener('enterpictureinpicture', renderMiniButton);
   $('#preview').addEventListener('leavepictureinpicture', renderMiniButton);

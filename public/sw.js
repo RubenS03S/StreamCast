@@ -1,7 +1,7 @@
 // StreamCast service worker: makes the app installable, loads the shell
 // instantly (network first, so updates are picked up) and shows the
 // "Ruben est en live" notifications.
-const CACHE = 'streamcast-v3';
+const CACHE = 'streamcast-v4';
 const SHELL = [
   '/',
   '/index.html',
