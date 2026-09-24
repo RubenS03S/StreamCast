@@ -1,0 +1,367 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#08080d">
+  <meta name="color-scheme" content="dark">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="StreamCast">
+  <meta name="format-detection" content="telephone=no">
+  <meta name="description" content="StreamCast">
+  <title>StreamCast</title>
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/icons/icon.svg" type="image/svg+xml">
+  <link rel="icon" href="/icons/icon-192.png" type="image/png" sizes="192x192">
+  <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+  <link rel="stylesheet" href="/css/app.css">
+  <script type="module" src="/js/main.js"></script>
+</head>
+<body data-view="view-home">
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <defs>
+      <linearGradient id="brand-grad" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0" stop-color="#8b7bff"/>
+        <stop offset=".55" stop-color="#c06bff"/>
+        <stop offset="1" stop-color="#ff4f8b"/>
+      </linearGradient>
+    </defs>
+    <symbol id="i-play" viewBox="0 0 24 24"><path d="M7.5 4.8v14.4a1 1 0 0 0 1.52.86l11.7-7.2a1 1 0 0 0 0-1.72L9.02 3.94A1 1 0 0 0 7.5 4.8z" fill="currentColor" stroke="none"/></symbol>
+    <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3M8.5 21h7"/></symbol>
+    <symbol id="i-mic-off" viewBox="0 0 24 24"><path d="M15 9.4V6a3 3 0 0 0-5.7-1.3M9 9v2a3 3 0 0 0 5 2.2M19 11a7 7 0 0 1-1.1 3.8M5 11a7 7 0 0 0 11.2 5.6M12 18v3M8.5 21h7M3.5 3.5l17 17"/></symbol>
+    <symbol id="i-volume" viewBox="0 0 24 24"><path d="M11 5 6.5 9H3.5v6h3L11 19V5z"/><path d="M15.5 9a4.2 4.2 0 0 1 0 6M18.5 6a8.5 8.5 0 0 1 0 12"/></symbol>
+    <symbol id="i-volume-x" viewBox="0 0 24 24"><path d="M11 5 6.5 9H3.5v6h3L11 19V5z"/><path d="m16 9.5 5 5M21 9.5l-5 5"/></symbol>
+    <symbol id="i-monitor" viewBox="0 0 24 24"><rect x="2.5" y="4" width="19" height="12.5" rx="2.2"/><path d="M8 20.5h8M12 16.5v4"/></symbol>
+    <symbol id="i-camera" viewBox="0 0 24 24"><rect x="2.5" y="6" width="13" height="12" rx="2.5"/><path d="m15.5 10.5 6-3.5v10l-6-3.5"/></symbol>
+    <symbol id="i-flip" viewBox="0 0 24 24"><path d="M4 8h2.5l1.8-2.6h7.4L17.5 8H20a1.5 1.5 0 0 1 1.5 1.5v8A1.5 1.5 0 0 1 20 19H4a1.5 1.5 0 0 1-1.5-1.5v-8A1.5 1.5 0 0 1 4 8z"/><path d="M9.3 12.2a3 3 0 0 1 5.2-.7l.5.7M14.7 14.8a3 3 0 0 1-5.2.7l-.5-.7M15 10.5v1.7h-1.7M9 16.5v-1.7h1.7"/></symbol>
+    <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 13.5a4.5 4.5 0 0 0 6.4.4l3-3a4.5 4.5 0 0 0-6.4-6.4l-1.4 1.4"/><path d="M14 10.5a4.5 4.5 0 0 0-6.4-.4l-3 3a4.5 4.5 0 0 0 6.4 6.4l1.4-1.4"/></symbol>
+    <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8.5" y="8.5" width="12.5" height="12.5" rx="2.5"/><path d="M15.5 8.5V5.5A2.5 2.5 0 0 0 13 3H5.5A2.5 2.5 0 0 0 3 5.5V13a2.5 2.5 0 0 0 2.5 2.5h3"/></symbol>
+    <symbol id="i-share" viewBox="0 0 24 24"><path d="M12 3.5v11.5M7.8 7.7 12 3.5l4.2 4.2"/><path d="M8.5 10.5H7a2.5 2.5 0 0 0-2.5 2.5v5.5A2.5 2.5 0 0 0 7 21h10a2.5 2.5 0 0 0 2.5-2.5V13a2.5 2.5 0 0 0-2.5-2.5h-1.5"/></symbol>
+    <symbol id="i-qr" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.6"/><rect x="14" y="3" width="7" height="7" rx="1.6"/><rect x="3" y="14" width="7" height="7" rx="1.6"/><path d="M14 14h2.5v2.5H14zM19.5 14H21M14 19.5V21M17.5 17.5H21V21h-3.5z"/></symbol>
+    <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 6.5h9M17 6.5h3M4 12h3M11 12h9M4 17.5h11M19 17.5h1"/><circle cx="15" cy="6.5" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="17.5" r="2"/></symbol>
+    <symbol id="i-gauge" viewBox="0 0 24 24"><path d="M4.6 18.5a9 9 0 1 1 14.8 0"/><path d="m12 14 4.2-4.2"/><circle cx="12" cy="14" r="1.4" fill="currentColor"/></symbol>
+    <symbol id="i-maximize" viewBox="0 0 24 24"><path d="M8.5 3.5h-3a2 2 0 0 0-2 2v3M15.5 3.5h3a2 2 0 0 1 2 2v3M20.5 15.5v3a2 2 0 0 1-2 2h-3M3.5 15.5v3a2 2 0 0 0 2 2h3"/></symbol>
+    <symbol id="i-minimize" viewBox="0 0 24 24"><path d="M8.5 3.5v3a2 2 0 0 1-2 2h-3M20.5 8.5h-3a2 2 0 0 1-2-2v-3M3.5 15.5h3a2 2 0 0 1 2 2v3M15.5 20.5v-3a2 2 0 0 1 2-2h3"/></symbol>
+    <symbol id="i-pip" viewBox="0 0 24 24"><path d="M21 11V6.5A2.5 2.5 0 0 0 18.5 4h-13A2.5 2.5 0 0 0 3 6.5v11A2.5 2.5 0 0 0 5.5 20H10"/><rect x="13" y="13.5" width="8.5" height="6.5" rx="1.5" fill="currentColor" stroke="none"/></symbol>
+    <symbol id="i-chat" viewBox="0 0 24 24"><path d="M20.5 11.8a8.3 8.3 0 0 1-12.1 7.4L3.5 20.5l1.4-4.6a8.3 8.3 0 1 1 15.6-4.1z"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/></symbol>
+    <symbol id="i-users" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0M16 4.6a3.5 3.5 0 0 1 0 6.8M18.2 14.4A6.5 6.5 0 0 1 21.5 20"/></symbol>
+    <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3.5v11.5M7.2 10.5 12 15.3l4.8-4.8M4.5 20h15"/></symbol>
+    <symbol id="i-stop" viewBox="0 0 24 24"><rect x="6.5" y="6.5" width="11" height="11" rx="2.5" fill="currentColor" stroke="none"/></symbol>
+    <symbol id="i-send" viewBox="0 0 24 24"><path d="M5 12h13.5M12.5 5.5 19 12l-6.5 6.5"/></symbol>
+    <symbol id="i-smile" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8.2 14.2a4.8 4.8 0 0 0 7.6 0M9 9.6h.01M15 9.6h.01"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5"/></symbol>
+    <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/></symbol>
+    <symbol id="i-eye-off" viewBox="0 0 24 24"><path d="M10 5.7a9.3 9.3 0 0 1 2-.2c6 0 9.5 6.5 9.5 6.5a17 17 0 0 1-2.5 3.3M6.6 6.9C4 8.7 2.5 12 2.5 12S6 18.5 12 18.5a9 9 0 0 0 4.9-1.4M9.9 9.9a3 3 0 0 0 4.2 4.2M3.5 3.5l17 17"/></symbol>
+    <symbol id="i-expand" viewBox="0 0 24 24"><path d="M14.5 3.5h6v6M9.5 20.5h-6v-6M20.5 3.5l-6.5 6.5M3.5 20.5l6.5-6.5"/></symbol>
+    <symbol id="i-shrink" viewBox="0 0 24 24"><path d="M4 14h6v6M20 10h-6V4M14 10l6.5-6.5M3.5 20.5 10 14"/></symbol>
+    <symbol id="i-stats" viewBox="0 0 24 24"><path d="M5 20v-5M10 20V9M15 20V4M20 20v-8"/></symbol>
+    <symbol id="i-alert" viewBox="0 0 24 24"><path d="M10.3 4 2.3 18a2 2 0 0 0 1.7 3h16a2 2 0 0 0 1.7-3l-8-14a2 2 0 0 0-3.4 0z"/><path d="M12 9.5v4M12 17h.01"/></symbol>
+    <symbol id="i-plus-square" viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="17" height="17" rx="4"/><path d="M12 8.5v7M8.5 12h7"/></symbol>
+    <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 11.5a8 8 0 0 0-14.5-4.3L3.5 9.5M3.5 4.5v5h5M4 12.5a8 8 0 0 0 14.5 4.3l2-2.3M20.5 19.5v-5h-5"/></symbol>
+    <symbol id="logo" viewBox="0 0 64 64"><rect width="64" height="64" rx="16" fill="url(#brand-grad)"/><path d="M16 26v-4.5a5 5 0 0 1 5-5h26a5 5 0 0 1 5 5v21a5 5 0 0 1-5 5H35" fill="none" stroke="#fff" stroke-width="4.4" stroke-linecap="round"/><path d="M16 33.5A14.5 14.5 0 0 1 30.5 48M16 40.5a7.5 7.5 0 0 1 7.5 7.5" fill="none" stroke="#fff" stroke-width="4.4" stroke-linecap="round"/><circle cx="17.2" cy="46.8" r="2.6" fill="#fff"/></symbol>
+  </svg>
+
+  <!-- ============================================================ HOME -->
+  <section id="view-home" class="view view-home">
+    <header class="topbar">
+      <div class="brand"><svg class="logo"><use href="#logo"/></svg><span>StreamCast</span></div>
+      <button class="btn btn-ghost btn-sm btn-install" type="button" hidden><svg class="i"><use href="#i-download"/></svg><span class="label">Télécharger</span></button>
+    </header>
+    <main class="home">
+      <div class="home-grid" id="home-grid">
+        <article class="card card-host">
+          <div class="card-head">
+            <h2>Diffuser</h2>
+            <span class="chip" id="host-code-chip" hidden></span>
+          </div>
+          <div class="field">
+            <span class="field-label">Version de diffusion</span>
+            <div class="chips" id="preset-chips"></div>
+            <p class="hint" id="preset-desc"></p>
+          </div>
+          <div class="toggles">
+            <label class="toggle-row"><span class="toggle-label"><svg class="i"><use href="#i-mic"/></svg>Micro</span><input type="checkbox" class="switch" id="opt-mic"></label>
+            <label class="toggle-row" id="row-sys"><span class="toggle-label"><svg class="i"><use href="#i-volume"/></svg>Son du PC</span><input type="checkbox" class="switch" id="opt-sys"></label>
+          </div>
+          <button class="btn btn-primary btn-xl" id="btn-start" type="button"><svg class="i"><use href="#i-play"/></svg><span id="btn-start-label">Démarrer le live</span></button>
+          <p class="hint center" id="host-note" hidden>Sur iPad et iPhone, Apple ne permet pas de partager l’écran depuis un navigateur : c’est la caméra qui est diffusée.</p>
+        </article>
+
+        <article class="card card-join">
+          <div class="card-head"><h2>Regarder</h2></div>
+          <button class="recent" id="btn-recent" type="button" hidden>
+            <span class="avatar">R</span>
+            <span class="recent-text"><b>Live de Ruben</b><small>Code <span id="recent-code"></span></small></span>
+            <svg class="i"><use href="#i-play"/></svg>
+          </button>
+          <form id="join-form" class="join-form" autocomplete="off">
+            <input id="join-code" class="code-input" inputmode="numeric" pattern="[0-9]*" maxlength="4" placeholder="Code" aria-label="Code du live" enterkeyhint="go">
+            <input id="join-name" class="input" placeholder="Ton prénom" maxlength="32" aria-label="Ton prénom" enterkeyhint="go">
+            <button class="btn btn-primary btn-xl" type="submit"><svg class="i"><use href="#i-play"/></svg>Rejoindre</button>
+          </form>
+        </article>
+      </div>
+    </main>
+  </section>
+
+  <!-- ========================================================== INVITE -->
+  <section id="view-invite" class="view view-invite" hidden>
+    <header class="topbar">
+      <div class="brand"><svg class="logo"><use href="#logo"/></svg><span>StreamCast</span></div>
+      <button class="btn btn-ghost btn-sm btn-install" type="button" hidden><svg class="i"><use href="#i-download"/></svg><span class="label">Télécharger</span></button>
+    </header>
+    <main class="invite">
+      <form class="card invite-card" id="invite-form" autocomplete="off">
+        <div class="avatar xl" id="invite-avatar">R</div>
+        <h1 id="invite-host">Ruben</h1>
+        <p class="invite-code">Code <b id="invite-code"></b></p>
+        <input id="invite-name" class="input" placeholder="Ton prénom" maxlength="32" aria-label="Ton prénom" enterkeyhint="go">
+        <button class="btn btn-primary btn-xl" type="submit" id="btn-watch"><svg class="i"><use href="#i-play"/></svg>Regarder</button>
+        <button class="link-btn" type="button" id="btn-invite-other">Autre code</button>
+      </form>
+    </main>
+  </section>
+
+  <!-- ======================================================= HOST LIVE -->
+  <section id="view-host" class="view view-host" hidden>
+    <header class="topbar">
+      <div class="brand"><svg class="logo"><use href="#logo"/></svg><span>StreamCast</span></div>
+      <div class="live-meta">
+        <span class="badge-live"><i></i>LIVE</span>
+        <span class="meta" id="host-timer">00:00</span>
+        <span class="meta"><svg class="i"><use href="#i-users"/></svg><span id="host-count-n">0</span></span>
+      </div>
+      <button class="btn btn-danger btn-sm" id="btn-end" type="button"><svg class="i"><use href="#i-stop"/></svg>Terminer</button>
+    </header>
+    <main class="host-grid">
+      <div class="host-main">
+        <div class="preview" id="preview-wrap">
+          <video id="preview" muted playsinline autoplay disablepictureinpicture></video>
+          <div class="preview-hidden" id="preview-hidden" hidden><svg class="i"><use href="#i-eye-off"/></svg>Aperçu masqué</div>
+          <div class="react-layer" id="host-react-layer"></div>
+          <div class="preview-bar">
+            <span class="pill" id="src-info">—</span>
+            <button class="icon-btn glass sm" id="btn-preview-toggle" type="button" title="Masquer l’aperçu"><svg class="i"><use href="#i-eye"/></svg></button>
+          </div>
+          <div class="source-lost" id="source-lost" hidden>
+            <svg class="i lg"><use href="#i-monitor"/></svg>
+            <b>Partage interrompu</b>
+            <span>Les spectateurs restent connectés</span>
+            <button class="btn btn-primary" id="btn-reshare" type="button">Choisir une source</button>
+          </div>
+        </div>
+
+        <div class="host-controls">
+          <button class="ctl off" id="ctl-mic" type="button" aria-pressed="false"><svg class="i"><use href="#i-mic-off"/></svg><span class="ctl-label">Micro coupé</span><span class="meter"><i></i></span></button>
+          <button class="ctl" id="ctl-sys" type="button" aria-pressed="true"><svg class="i"><use href="#i-volume"/></svg><span class="ctl-label">Son du PC</span></button>
+          <button class="ctl" id="ctl-preset" type="button"><svg class="i"><use href="#i-gauge"/></svg><span class="ctl-label">Auto</span></button>
+          <button class="ctl" id="ctl-source" type="button"><svg class="i"><use href="#i-monitor"/></svg><span class="ctl-label">Changer de source</span></button>
+          <button class="ctl" id="ctl-camera" type="button" hidden><svg class="i"><use href="#i-flip"/></svg><span class="ctl-label">Retourner</span></button>
+          <button class="ctl" id="ctl-settings" type="button"><svg class="i"><use href="#i-sliders"/></svg><span class="ctl-label">Réglages</span></button>
+        </div>
+
+        <div class="notice" id="audio-warn" hidden>
+          <svg class="i"><use href="#i-alert"/></svg>
+          <span>Son du PC non partagé : choisis <b>Écran entier</b> et coche <b>Partager l’audio du système</b>.</span>
+          <button class="btn btn-ghost btn-sm" id="btn-audio-retry" type="button">Réessayer</button>
+        </div>
+
+        <div class="stats-bar" id="host-stats"></div>
+      </div>
+
+      <aside class="host-side">
+        <div class="card share-card">
+          <span class="field-label">Code</span>
+          <div class="share-code" id="share-code">—</div>
+          <button class="share-link" id="share-link-box" type="button" title="Copier le lien"><svg class="i"><use href="#i-link"/></svg><span id="share-link"></span></button>
+          <div class="share-actions">
+            <button class="btn btn-primary" id="btn-copy" type="button"><svg class="i"><use href="#i-copy"/></svg>Copier le lien</button>
+            <button class="btn btn-ghost" id="btn-share" type="button"><svg class="i"><use href="#i-share"/></svg>Partager</button>
+            <button class="btn btn-ghost icon-only" id="btn-qr" type="button" title="QR code" aria-label="QR code"><svg class="i"><use href="#i-qr"/></svg></button>
+          </div>
+        </div>
+
+        <div class="card list-card">
+          <div class="card-head"><h3>Spectateurs</h3><span class="count" id="viewers-count">0</span></div>
+          <ul class="viewers" id="viewers"></ul>
+          <p class="empty" id="viewers-empty">En attente d’un spectateur…</p>
+        </div>
+
+        <div class="card chat-card">
+          <div class="card-head"><h3>Chat</h3></div>
+          <div class="chat-log" id="host-chat-log"></div>
+          <form class="chat-form" id="host-chat-form" autocomplete="off">
+            <input id="host-chat-input" class="input" placeholder="Message" maxlength="500" aria-label="Message">
+            <button class="icon-btn accent" type="submit" aria-label="Envoyer"><svg class="i"><use href="#i-send"/></svg></button>
+          </form>
+        </div>
+      </aside>
+    </main>
+  </section>
+
+  <!-- =========================================================== WATCH -->
+  <section id="view-watch" class="view view-watch" hidden>
+    <div class="player no-video" id="player">
+      <div class="stage" id="stage">
+        <video id="remote" playsinline autoplay autopictureinpicture x-webkit-airplay="allow"></video>
+      </div>
+      <div class="react-layer" id="react-layer"></div>
+      <div class="chat-toasts" id="chat-toasts"></div>
+
+      <div class="overlay-top">
+        <button class="icon-btn glass" id="w-leave" type="button" aria-label="Quitter"><svg class="i"><use href="#i-x"/></svg></button>
+        <div class="w-title">
+          <span class="w-name">Ruben</span>
+          <span class="badge-live"><i></i>LIVE</span>
+          <span class="w-host-mic" id="w-host-mic" hidden><svg class="i"><use href="#i-mic"/></svg></span>
+        </div>
+        <span class="w-quality" id="w-quality" data-tone="wait"><i></i><span id="w-quality-label"></span></span>
+        <button class="icon-btn glass" id="w-stats-btn" type="button" aria-label="Statistiques"><svg class="i"><use href="#i-stats"/></svg></button>
+      </div>
+
+      <div class="stats-overlay" id="w-stats" hidden></div>
+
+      <div class="state-overlay" id="w-state" hidden>
+        <div class="state-visual"><span class="avatar xl">R</span><span class="ring"></span></div>
+        <p class="state-title" id="w-state-title"></p>
+        <p class="state-sub" id="w-state-sub"></p>
+        <button class="btn btn-ghost" id="w-state-btn" type="button" hidden></button>
+      </div>
+
+      <button class="unmute" id="w-unmute" type="button" hidden><svg class="i"><use href="#i-volume-x"/></svg>Touchez pour activer le son</button>
+
+      <div class="react-picker" id="react-picker" hidden></div>
+
+      <div class="controls" id="w-controls">
+        <button class="icon-btn" id="w-mic" type="button" aria-label="Micro" aria-pressed="false"><svg class="i"><use href="#i-mic-off"/></svg></button>
+        <button class="icon-btn" id="w-chat" type="button" aria-label="Chat"><svg class="i"><use href="#i-chat"/></svg><span class="badge" hidden></span></button>
+        <button class="icon-btn" id="w-react" type="button" aria-label="Réactions"><svg class="i"><use href="#i-smile"/></svg></button>
+        <span class="sep"></span>
+        <button class="icon-btn" id="w-fit" type="button" aria-label="Ajuster / Remplir"><svg class="i"><use href="#i-expand"/></svg></button>
+        <button class="icon-btn" id="w-settings" type="button" aria-label="Réglages"><svg class="i"><use href="#i-sliders"/></svg></button>
+        <button class="icon-btn" id="w-pip" type="button" aria-label="Mini-lecteur"><svg class="i"><use href="#i-pip"/></svg></button>
+        <button class="icon-btn" id="w-fs" type="button" aria-label="Plein écran"><svg class="i"><use href="#i-maximize"/></svg></button>
+      </div>
+    </div>
+
+    <aside class="chat-drawer" id="w-chat-drawer" hidden>
+      <div class="drawer-head">
+        <h3>Chat</h3>
+        <button class="icon-btn ghost sm" id="w-chat-close" type="button" aria-label="Fermer"><svg class="i"><use href="#i-x"/></svg></button>
+      </div>
+      <div class="chat-log" id="w-chat-log"><p class="chat-empty">Aucun message pour l’instant</p></div>
+      <form class="chat-form" id="w-chat-form" autocomplete="off">
+        <input id="w-chat-input" class="input" placeholder="Message" maxlength="500" aria-label="Message" enterkeyhint="send">
+        <button class="icon-btn accent" type="submit" aria-label="Envoyer"><svg class="i"><use href="#i-send"/></svg></button>
+      </form>
+    </aside>
+  </section>
+
+  <!-- ========================================================= DIALOGS -->
+  <dialog class="sheet" id="dlg-host">
+    <div class="sheet-head">
+      <h3 class="sheet-title">Réglages</h3>
+      <button class="icon-btn ghost sm" data-close type="button" aria-label="Fermer"><svg class="i"><use href="#i-x"/></svg></button>
+    </div>
+    <div class="sheet-body">
+      <section class="group">
+        <h4>Version de diffusion</h4>
+        <div class="choices" id="hs-presets"></div>
+      </section>
+      <section class="group">
+        <h4>Codec vidéo</h4>
+        <div id="hs-codec"></div>
+        <p class="hint">Auto choisit AV1 si l’appareil du spectateur le décode en matériel (iPhone 17), sinon H.264, décodé en matériel sur tous les iPad et iPhone.</p>
+      </section>
+      <section class="group">
+        <h4>Audio</h4>
+        <label class="row"><span>Micro</span><select id="hs-mic" class="select"></select></label>
+        <label class="row"><span>Réduction de bruit</span><input type="checkbox" class="switch" id="hs-noise"></label>
+        <div class="row range-row"><span>Volume du micro</span><input type="range" min="0" max="200" step="5" id="hs-mic-vol"><output></output></div>
+        <div class="row range-row"><span>Volume du son du PC</span><input type="range" min="0" max="200" step="5" id="hs-game-vol"><output></output></div>
+        <label class="row" id="hs-sink-row" hidden><span>Sortie de la voix des spectateurs</span><select id="hs-sink" class="select"></select></label>
+      </section>
+      <section class="group">
+        <h4>Accès</h4>
+        <div class="row"><span>Code actuel</span><span class="row-value"><b id="hs-code">—</b><button class="btn btn-ghost btn-sm" id="hs-newcode" type="button"><svg class="i"><use href="#i-refresh"/></svg>Nouveau code</button></span></div>
+        <label class="row"><span>Code à 4 chiffres</span><input type="checkbox" class="switch" id="hs-digits"></label>
+        <label class="row"><span>Valider chaque spectateur</span><input type="checkbox" class="switch" id="hs-approve"></label>
+      </section>
+      <section class="group">
+        <h4>Alertes</h4>
+        <label class="row"><span>Sons</span><input type="checkbox" class="switch" id="hs-sounds"></label>
+        <label class="row" id="hs-notify-row"><span>Notifications Windows</span><input type="checkbox" class="switch" id="hs-notify"></label>
+      </section>
+    </div>
+  </dialog>
+
+  <dialog class="sheet" id="dlg-viewer">
+    <div class="sheet-head">
+      <h3 class="sheet-title">Réglages</h3>
+      <button class="icon-btn ghost sm" data-close type="button" aria-label="Fermer"><svg class="i"><use href="#i-x"/></svg></button>
+    </div>
+    <div class="sheet-body">
+      <section class="group">
+        <h4>Qualité</h4>
+        <div id="vs-quality"></div>
+      </section>
+      <section class="group" id="vs-latency-row">
+        <h4>Latence</h4>
+        <div id="vs-latency"></div>
+      </section>
+      <section class="group">
+        <h4>Affichage</h4>
+        <div id="vs-fit"></div>
+        <label class="row"><span>Statistiques</span><input type="checkbox" class="switch" id="vs-stats"></label>
+      </section>
+      <section class="group" id="vs-fs-row">
+        <h4>Plein écran</h4>
+        <div id="vs-fs"></div>
+        <p class="hint">« Lecteur iPad » passe automatiquement en mini-lecteur quand tu quittes l’app.</p>
+      </section>
+      <section class="group">
+        <h4>Son</h4>
+        <div class="row range-row"><span>Jeu</span><input type="range" min="0" max="200" step="5" id="vs-game"><output></output></div>
+        <div class="row range-row"><span>Voix</span><input type="range" min="0" max="200" step="5" id="vs-voice"><output></output></div>
+      </section>
+      <section class="group">
+        <h4>Prénom</h4>
+        <input id="vs-name" class="input" placeholder="Ton prénom" maxlength="32" aria-label="Ton prénom">
+      </section>
+    </div>
+  </dialog>
+
+  <dialog class="sheet sheet-sm" id="dlg-qr">
+    <div class="sheet-head">
+      <h3 class="sheet-title">QR code</h3>
+      <button class="icon-btn ghost sm" data-close type="button" aria-label="Fermer"><svg class="i"><use href="#i-x"/></svg></button>
+    </div>
+    <div class="sheet-body qr-body">
+      <div class="qr-box" id="qr-box"></div>
+      <p class="qr-url" id="qr-url"></p>
+    </div>
+  </dialog>
+
+  <dialog class="sheet sheet-sm" id="dlg-install">
+    <div class="sheet-head">
+      <h3 class="sheet-title">Télécharger StreamCast</h3>
+      <button class="icon-btn ghost sm" data-close type="button" aria-label="Fermer"><svg class="i"><use href="#i-x"/></svg></button>
+    </div>
+    <div class="sheet-body">
+      <ol class="steps" id="install-ios">
+        <li><span class="step-n">1</span><span>Touche <svg class="i inline"><use href="#i-share"/></svg> <b>Partager</b> dans Safari</span></li>
+        <li><span class="step-n">2</span><span>Choisis <svg class="i inline"><use href="#i-plus-square"/></svg> <b>Sur l’écran d’accueil</b></span></li>
+        <li><span class="step-n">3</span><span>Ouvre <b>StreamCast</b> depuis l’écran d’accueil</span></li>
+      </ol>
+      <ol class="steps" id="install-desktop">
+        <li><span class="step-n">1</span><span>Ouvre cette page dans <b>Chrome</b> ou <b>Edge</b></span></li>
+        <li><span class="step-n">2</span><span>Clique sur l’icône <svg class="i inline"><use href="#i-download"/></svg> <b>Installer</b> à droite de la barre d’adresse</span></li>
+        <li><span class="step-n">3</span><span>StreamCast s’ouvre dans sa propre fenêtre et apparaît dans le menu Démarrer</span></li>
+      </ol>
+    </div>
+  </dialog>
+</body>
+</html>
