@@ -2,6 +2,8 @@
 
 Partage d'écran en direct du PC de Ruben vers un iPad ou un iPhone, comme un appel : un lien (ou un code à 3 chiffres, 4 en option), l'image et le son du PC en 60 FPS jusqu'en 4K, et les deux micros ouverts pour se parler. Avec un chat, et un mini‑lecteur pour garder le live en regardant autre chose.
 
+**Adresse : https://streamcast-ruben.netlify.app**
+
 La vidéo et le son passent **directement** du PC à l'iPad (WebRTC, pair‑à‑pair). Le serveur ne sert qu'à se retrouver avec le code : il ne voit jamais passer l'image.
 
 ## Utilisation
