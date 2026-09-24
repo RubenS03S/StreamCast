@@ -6,8 +6,9 @@ import {
 } from './rtc.js';
 import { isIPad, isIOS, deviceLabel, canElementFullscreen, fullscreenElement } from './device.js';
 import { toast, openDialog, segmented, floatReaction } from './ui.js';
+import { createMeter } from './audio.js';
 
-const DEFAULT_PREFS = { quality: 'auto', latency: 'auto', fit: 'contain', stats: false, fsMode: 'app', game: 1, voice: 1 };
+const DEFAULT_PREFS = { quality: 'auto', latency: 'auto', fit: 'contain', stats: false, fsMode: 'app', game: 1, voice: 1, call: true };
 
 const V = {
   active: false,
@@ -31,6 +32,8 @@ const V = {
   onConnected: null,
   onFailed: null,
   unread: 0,
+  micBlocked: false,
+  micMeter: null,
   thumbEvery: 0,
   stopThumbs: null,
   jbBoostUntil: 0,
@@ -261,6 +264,7 @@ function onPcState(pc) {
     V.onConnected?.();
     startStats();
     applyHostState();
+    if (V.prefs.call && !V.micOn && !V.micBlocked) startMic({ auto: true });
   } else if (st === 'disconnected') {
     V.cancelDisc?.();
     V.cancelDisc = later(() => {
@@ -330,6 +334,9 @@ function onHostMessage(m) {
       break;
     case 'react':
       floatReaction($('#react-layer'), m.emoji);
+      break;
+    case 'talk':
+      $('#player').classList.toggle('host-talking', !!m.on);
       break;
     case 'offer':
       onRenegotiate(m.sdp).catch((err) => console.warn('renegotiate', err));
@@ -490,33 +497,74 @@ function setupMediaSession() {
 }
 
 // ================================================================== mic
-async function toggleMic() {
+// Call: the spectateur's mic goes to Ruben. On by default ("Appel" setting),
+// off with one tap (iOS plays the live with better sound when the mic is off).
+function toggleMic() {
+  return V.micOn ? stopMic() : startMic();
+}
+
+async function startMic({ auto = false } = {}) {
   const btn = $('#w-mic');
-  if (V.micOn) {
-    V.micOn = false;
-    await V.micSender?.replaceTrack(null).catch(() => {});
-    V.mic?.stop();
-    V.mic = null;
-    send({ t: 'mic', on: false });
-  } else {
-    btn.disabled = true;
+  if (V.micOn || btn.disabled) return;
+  btn.disabled = true;
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+    });
+    V.mic = stream.getAudioTracks()[0];
+    await V.micSender?.replaceTrack(V.mic);
+    V.micOn = true;
+    V.micBlocked = false;
+    send({ t: 'mic', on: true });
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+      V.ac ||= new (window.AudioContext || window.webkitAudioContext)();
+      V.ac.resume().catch(() => {});
+      V.micMeter = createMeter(V.ac, V.mic);
+    } catch {}
+    // A page using the mic may play sound without a tap on iOS.
+    if (video().muted && !$('#w-unmute').hidden) {
+      const v = video();
+      v.muted = false;
+      v.play().then(() => ($('#w-unmute').hidden = true)).catch(() => {
+        v.muted = true;
+        v.play().catch(() => {});
       });
-      V.mic = stream.getAudioTracks()[0];
-      await V.micSender?.replaceTrack(V.mic);
-      V.micOn = true;
-      send({ t: 'mic', on: true });
-    } catch {
-      toast('Micro refusé — autorise le micro dans les réglages', { type: 'warn', icon: 'mic-off' });
     }
-    btn.disabled = false;
+  } catch {
+    V.micBlocked = true;
+    toast(auto ? 'Micro non autorisé : touche le micro pour parler' : 'Micro refusé : autorise-le dans les réglages de Safari', { type: 'warn', icon: 'mic-off' });
   }
+  btn.disabled = false;
+  renderMic();
+  setTimeout(resumePlayback, 200);
+}
+
+async function stopMic() {
+  if (!V.micOn) return;
+  V.micOn = false;
+  await V.micSender?.replaceTrack(null).catch(() => {});
+  V.mic?.stop();
+  V.mic = null;
+  V.micMeter?.stop?.();
+  V.micMeter = null;
+  send({ t: 'mic', on: false });
+  renderMic();
+  setTimeout(resumePlayback, 200);
+}
+
+function renderMic() {
+  const btn = $('#w-mic');
   btn.classList.toggle('on', V.micOn);
   btn.setAttribute('aria-pressed', String(V.micOn));
+  btn.setAttribute('aria-label', V.micOn ? 'Couper mon micro' : 'Activer mon micro');
   setIcon(btn, V.micOn ? 'mic' : 'mic-off');
-  setTimeout(resumePlayback, 200);
+}
+
+function micLevelLoop() {
+  requestAnimationFrame(micLevelLoop);
+  if (!V.active || document.hidden) return;
+  const lvl = V.micOn && V.micMeter ? V.micMeter() : 0;
+  $('#w-mic').style.setProperty('--lvl', lvl.toFixed(3));
 }
 
 // ================================================================= stats
@@ -794,6 +842,12 @@ function wireSettings() {
     V.prefs.fsMode = v;
     savePrefs();
   });
+  const call = $('#vs-call');
+  call.checked = V.prefs.call;
+  call.addEventListener('change', () => {
+    V.prefs.call = call.checked;
+    savePrefs();
+  });
   const stats = $('#vs-stats');
   stats.checked = V.prefs.stats;
   stats.addEventListener('change', () => {
@@ -831,8 +885,11 @@ function leave() {
   V.mic?.stop();
   V.mic = null;
   V.micOn = false;
-  $('#w-mic').classList.remove('on');
-  setIcon($('#w-mic'), 'mic-off');
+  V.micBlocked = false;
+  V.micMeter?.stop?.();
+  V.micMeter = null;
+  $('#player').classList.remove('host-talking');
+  renderMic();
   const v = video();
   v.srcObject = null;
   if (fullscreenElement()) (document.exitFullscreen || document.webkitExitFullscreen)?.call(document);
@@ -868,6 +925,7 @@ export function initViewer({ show, exit }) {
 
   wireStage();
   wireSettings();
+  requestAnimationFrame(micLevelLoop);
 
   $('#w-leave').addEventListener('click', leave);
   $('#w-mic').addEventListener('click', toggleMic);
@@ -895,6 +953,7 @@ export function initViewer({ show, exit }) {
   // Any tap on the player turns the sound on when it started muted.
   const tapUnmute = () => {
     if (!$('#w-unmute').hidden) unmute();
+    if (V.ac?.state === 'suspended') V.ac.resume().catch(() => {});
   };
   $('#player').addEventListener('touchend', tapUnmute, { passive: true });
   $('#player').addEventListener('click', tapUnmute);

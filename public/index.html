@@ -116,29 +116,32 @@
         <span class="meta" id="host-timer">00:00</span>
         <span class="meta"><svg class="i"><use href="#i-users"/></svg><span id="host-count-n">0</span></span>
       </div>
+      <button class="btn btn-ghost btn-sm" id="ctl-settings" type="button"><svg class="i"><use href="#i-sliders"/></svg><span class="hide-sm">Réglages</span></button>
       <button class="btn btn-danger btn-sm" id="btn-end" type="button"><svg class="i"><use href="#i-stop"/></svg>Terminer</button>
     </header>
     <main class="host-grid">
       <div class="host-main">
-        <div class="preview" id="preview-wrap">
-          <video id="preview" muted playsinline autoplay disablepictureinpicture></video>
-          <div class="preview-hidden" id="preview-hidden" hidden><svg class="i"><use href="#i-eye-off"/></svg>Aperçu masqué</div>
-          <div class="react-layer" id="host-react-layer"></div>
-          <figure class="viewer-view" id="viewer-view" hidden>
-            <img id="viewer-view-img" alt="Ce que voit le spectateur">
-            <figcaption id="viewer-view-cap"></figcaption>
-          </figure>
-          <div class="preview-bar">
+        <section class="retour" id="retour">
+          <div class="retour-head">
+            <span class="retour-title">Retour</span>
             <span class="pill" id="src-info">—</span>
-            <button class="icon-btn glass sm" id="btn-preview-toggle" type="button" title="Masquer l’aperçu"><svg class="i"><use href="#i-eye"/></svg></button>
+            <button class="btn btn-ghost btn-sm" id="btn-retour-toggle" type="button"><svg class="i"><use href="#i-eye-off"/></svg><span class="label">Masquer</span></button>
           </div>
-          <div class="source-lost" id="source-lost" hidden>
-            <svg class="i lg"><use href="#i-monitor"/></svg>
-            <b>Partage arrêté</b>
-            <span>Les spectateurs restent connectés et voient la dernière image</span>
-            <button class="btn btn-primary" id="btn-reshare" type="button">Reprendre le partage</button>
+          <div class="preview" id="preview-wrap">
+            <video id="preview" muted playsinline autoplay disablepictureinpicture></video>
+            <div class="react-layer" id="host-react-layer"></div>
+            <figure class="viewer-view" id="viewer-view" hidden>
+              <img id="viewer-view-img" alt="Ce que voit le spectateur">
+              <figcaption id="viewer-view-cap"></figcaption>
+            </figure>
+            <div class="source-lost" id="source-lost" hidden>
+              <svg class="i lg"><use href="#i-monitor"/></svg>
+              <b>Partage arrêté</b>
+              <span>Les spectateurs restent connectés et voient la dernière image</span>
+              <button class="btn btn-primary" id="btn-reshare" type="button">Reprendre le partage</button>
+            </div>
           </div>
-        </div>
+        </section>
 
         <div class="host-controls">
           <button class="ctl off" id="ctl-mic" type="button" aria-pressed="false"><svg class="i"><use href="#i-mic-off"/></svg><span class="ctl-label">Micro coupé</span><span class="meter"><i></i></span></button>
@@ -147,20 +150,28 @@
           <button class="ctl" id="ctl-mini" type="button" aria-pressed="false"><svg class="i"><use href="#i-pip"/></svg><span class="ctl-label">Mini-retour</span></button>
           <button class="ctl" id="ctl-source" type="button"><svg class="i"><use href="#i-monitor"/></svg><span class="ctl-label">Changer d’écran</span></button>
           <button class="ctl" id="ctl-camera" type="button" hidden><svg class="i"><use href="#i-flip"/></svg><span class="ctl-label">Retourner</span></button>
-          <button class="ctl" id="ctl-settings" type="button"><svg class="i"><use href="#i-sliders"/></svg><span class="ctl-label">Réglages</span></button>
         </div>
 
-        <div class="notice" id="surface-warn" hidden>
-          <svg class="i"><use href="#i-alert"/></svg>
-          <span>Tu partages <b id="surface-warn-what">une seule fenêtre</b> : si tu passes sur Google ou une autre app, le spectateur ne le verra pas. Choisis <b>Écran entier</b> pour tout montrer.</span>
-          <button class="btn btn-ghost btn-sm" id="btn-surface-fix" type="button">Écran entier</button>
-        </div>
-
-        <div class="notice" id="audio-warn" hidden>
-          <svg class="i"><use href="#i-alert"/></svg>
-          <span>Son du PC non partagé : choisis <b>Écran entier</b> et coche <b>Partager l’audio du système</b>.</span>
-          <button class="btn btn-ghost btn-sm" id="btn-audio-retry" type="button">Réessayer</button>
-        </div>
+        <section class="checks" id="checks" aria-label="Vérification de la capture">
+          <div class="check" id="chk-image" data-state="wait"><i class="dot"></i><span class="check-name">Image</span><span class="check-val"></span></div>
+          <div class="check" id="chk-surface" data-state="wait"><i class="dot"></i><span class="check-name">Écran entier</span><span class="check-val"></span><button class="btn btn-ghost btn-xs" id="btn-surface-fix" type="button" hidden>Partager tout l’écran</button></div>
+          <div class="check" id="chk-audio" data-state="wait"><i class="dot"></i><span class="check-name">Son du PC</span><span class="meter"><i></i></span><span class="check-val"></span><button class="btn btn-ghost btn-xs" id="btn-audio-retry" type="button" hidden>Réessayer</button></div>
+          <div class="check" id="chk-mic" data-state="wait"><i class="dot"></i><span class="check-name">Micro</span><span class="meter"><i></i></span><span class="check-val"></span></div>
+          <div class="check" id="chk-encoder" data-state="wait"><i class="dot"></i><span class="check-name">Encodage</span><span class="check-val"></span></div>
+          <div class="check" id="chk-echo" data-state="wait"><i class="dot"></i><span class="check-name">Anti-écho</span><span class="check-val"></span></div>
+          <div class="check" id="chk-browser" data-state="warn" hidden><i class="dot"></i><span class="check-name">Navigateur</span><span class="check-val">Utilise Chrome ou Edge pour le son du PC et le mini-retour</span></div>
+          <details class="check-help">
+            <summary>Écran noir, figé ou saccadé ?</summary>
+            <ul>
+              <li>Mets le jeu en <b>plein écran fenêtré</b> (borderless) plutôt qu’en plein écran exclusif.</li>
+              <li>Chrome / Edge : Paramètres › Système › <b>Utiliser l’accélération graphique</b> activé, puis redémarre le navigateur.</li>
+              <li>Windows : Paramètres › Affichage › Graphiques › <b>Planification du GPU à accélération matérielle</b> activée, et Chrome / Edge réglé sur <b>Hautes performances</b>.</li>
+              <li>Limite les FPS du jeu (par exemple 120) pour laisser un peu de marge à la capture.</li>
+              <li>Couleurs délavées chez le spectateur : désactive le <b>HDR</b> de Windows pendant le live.</li>
+              <li>Netflix, Disney+ et autres contenus protégés apparaissent en noir : ces services bloquent toute capture.</li>
+            </ul>
+          </details>
+        </section>
 
         <div class="stats-bar" id="host-stats"></div>
       </div>
@@ -194,6 +205,11 @@
       </aside>
     </main>
   </section>
+
+  <div class="picker-hint" id="picker-hint" hidden>
+    <svg class="i"><use href="#i-monitor"/></svg>
+    <span>Choisis <b>Écran entier</b> puis coche <b>Partager l’audio du système</b></span>
+  </div>
 
   <!-- =========================================================== WATCH -->
   <section id="view-watch" class="view view-watch" hidden>
@@ -277,6 +293,7 @@
         <label class="row"><span>Réduction de bruit</span><input type="checkbox" class="switch" id="hs-noise"></label>
         <div class="row range-row"><span>Volume du micro</span><input type="range" min="0" max="200" step="5" id="hs-mic-vol"><output></output></div>
         <div class="row range-row"><span>Volume du son du PC</span><input type="range" min="0" max="200" step="5" id="hs-game-vol"><output></output></div>
+        <div class="row range-row"><span>Voix des spectateurs</span><input type="range" min="0" max="100" step="5" id="hs-viewer-vol"><output></output></div>
         <label class="row" id="hs-sink-row" hidden><span>Sortie de la voix des spectateurs</span><select id="hs-sink" class="select"></select></label>
       </section>
       <section class="group">
@@ -316,6 +333,10 @@
         <h4>Plein écran</h4>
         <div id="vs-fs"></div>
         <p class="hint">« Lecteur iPad » passe automatiquement en mini-lecteur quand tu quittes l’app.</p>
+      </section>
+      <section class="group">
+        <h4>Appel</h4>
+        <label class="row"><span>Activer mon micro à la connexion</span><input type="checkbox" class="switch" id="vs-call"></label>
       </section>
       <section class="group">
         <h4>Son</h4>

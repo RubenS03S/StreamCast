@@ -7,6 +7,8 @@ export const isAndroid = /Android/.test(ua);
 export const isMobile = isIOS || isAndroid;
 export const isWindows = /Windows/.test(ua);
 export const isDesktop = !isMobile;
+export const isChromium =
+  !!navigator.userAgentData?.brands?.some((b) => /Chrom|Edge/i.test(b.brand)) || /Chrome\/|Edg\//.test(ua);
 
 // iPadOS / iOS browsers cannot capture the screen (Apple only allows it in
 // native apps). They can still broadcast the camera.

@@ -5,13 +5,13 @@ import { Mixer, chime } from './audio.js';
 import {
   waitIceGathering, tuneAnswerForSender, applyCodecPreferences, encodeCaps, chooseCodec, codecLabel, senderStats,
 } from './rtc.js';
-import { canCaptureScreen } from './device.js';
+import { canCaptureScreen, isChromium } from './device.js';
 import { toast, openDialog, closeDialog, confirmDialog, openMenu, segmented, showQr, notify, floatReaction } from './ui.js';
 
 const DEFAULT_SETTINGS = {
   preset: 'auto',
   codec: 'auto',
-  micOn: false,
+  micOn: true,
   gameOn: true,
   digits: 3,
   approve: false,
@@ -22,6 +22,7 @@ const DEFAULT_SETTINGS = {
   micVolume: 1,
   gameVolume: 1,
   sinkId: '',
+  viewerVolume: 1,
   preview: true,
 };
 
@@ -43,6 +44,10 @@ const S = {
   stopStats: null,
   startedAt: 0,
   sourceLost: false,
+  gameMeter: null,
+  talking: false,
+  talkUntil: 0,
+  capture: { last: null, fps: 0, frames: 0 },
   settings: { ...DEFAULT_SETTINGS, ...storage.get('hostSettings', {}) },
 };
 
@@ -69,6 +74,8 @@ class Peer {
     this.viewerStats = null;
     this.thumb = null;
     this.thumbAt = 0;
+    this.speaking = false;
+    this.speakUntil = 0;
   }
 
   send(msg) {
@@ -130,7 +137,7 @@ class Peer {
   attachVoice(track) {
     this.audioEl = h('audio', { autoplay: true });
     this.audioEl.srcObject = new MediaStream([track]);
-    this.audioEl.volume = 1;
+    this.audioEl.volume = clamp(S.settings.viewerVolume, 0, 1);
     if (S.settings.sinkId && this.audioEl.setSinkId) this.audioEl.setSinkId(S.settings.sinkId).catch(() => {});
     document.body.append(this.audioEl);
     this.audioEl.play().catch(() => {});
@@ -378,7 +385,8 @@ function netQuality(peer) {
 }
 
 // ================================================================ helpers
-const wantThumbs = () => S.live && (!!mini.win || document.visibilityState === 'visible');
+const wantThumbs = () =>
+  S.live && (!!mini.win || (document.visibilityState === 'visible' && S.settings.preview));
 
 function hostState() {
   const p = preset();
@@ -424,7 +432,14 @@ function displayOptions() {
 }
 
 async function captureSource() {
-  if (S.mode === 'screen') return navigator.mediaDevices.getDisplayMedia(displayOptions());
+  if (S.mode === 'screen') {
+    $('#picker-hint').hidden = false;
+    try {
+      return await navigator.mediaDevices.getDisplayMedia(displayOptions());
+    } finally {
+      $('#picker-hint').hidden = true;
+    }
+  }
   const p = preset();
   return navigator.mediaDevices.getUserMedia({
     video: { facingMode: S.facing, width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: Math.min(60, p.fps) } },
@@ -438,14 +453,19 @@ function useCapture(stream) {
   S.game = stream.getAudioTracks()[0] || null;
   S.video.contentHint = S.mode === 'camera' ? 'motion' : preset().hint;
   S.video.addEventListener('ended', onSourceEnded);
+  S.video.addEventListener('mute', renderChecks);
+  S.video.addEventListener('unmute', renderChecks);
   S.game?.addEventListener('ended', () => {
     if (S.game?.readyState === 'ended') {
       S.game = null;
       S.mixer.setGameTrack(null);
-      updateAudioWarning();
+      renderChecks();
     }
   });
   S.mixer.setGameTrack(S.game);
+  S.gameMeter?.stop?.();
+  S.gameMeter = S.game ? S.mixer.meter(S.game) : null;
+  S.capture = { last: null, fps: 0, frames: 0, size: sizeOf(S.video) };
   S.mixer.setGameVolume(S.settings.gameOn ? S.settings.gameVolume : 0);
   $('#preview').srcObject = new MediaStream([S.video]);
   for (const peer of S.peers.values()) {
@@ -459,18 +479,25 @@ function useCapture(stream) {
   S.sourceLost = false;
   $('#source-lost').hidden = true;
   if (mini.video) mini.video.srcObject = new MediaStream([S.video]);
-  updateSurfaceWarning();
   updateSourceInfo();
-  updateAudioWarning();
+  renderChecks();
   broadcastState();
 }
+
+const sizeOf = (track) => {
+  const s = track?.getSettings() || {};
+  return `${s.width}x${s.height}`;
+};
 
 function onSourceEnded() {
   if (!S.live || S.video?.readyState !== 'ended') return;
   S.sourceLost = true;
   $('#source-lost').hidden = false;
   broadcastState();
+  renderChecks();
+  renderMini();
   if (S.settings.sounds) chime('alert');
+  notify('StreamCast', 'Le partage d’écran s’est arrêté : reviens sur StreamCast pour le reprendre');
 }
 
 async function changeSource() {
@@ -487,18 +514,77 @@ async function switchCamera() {
   await changeSource();
 }
 
-// Sharing a single window or tab means the spectateur loses the image as soon
-// as Ruben switches to another app: point him to "Écran entier".
-function updateSurfaceWarning() {
-  const surface = S.mode === 'screen' ? S.video?.getSettings().displaySurface : null;
-  const partial = surface === 'window' || surface === 'browser';
-  $('#surface-warn').hidden = !partial;
-  if (partial) $('#surface-warn-what').textContent = surface === 'window' ? 'une seule fenêtre' : 'un seul onglet';
+// ============================================================ checklist
+// Live check of everything that usually breaks screen streaming: frames
+// arriving, whole screen shared, PC sound captured, mic, GPU encoding, echo.
+function setCheck(id, state, value, { hidden = false } = {}) {
+  const row = $(`#${id}`);
+  row.hidden = hidden;
+  row.dataset.state = state;
+  row.querySelector('.check-val').textContent = value;
 }
 
-function updateAudioWarning() {
-  const warn = S.live && S.mode === 'screen' && S.settings.gameOn && !S.game;
-  $('#audio-warn').hidden = !warn;
+// Frames per second actually produced by the capture.
+function measureCapture() {
+  const c = S.capture;
+  const st = S.video?.stats;
+  const now = performance.now();
+  if (st && typeof st.totalFrames === 'number') {
+    if (c.last) c.fps = (st.totalFrames - c.last.frames) / ((now - c.last.t) / 1000);
+    c.last = { t: now, frames: st.totalFrames };
+  } else {
+    if (c.last) c.fps = (c.frames - c.last.frames) / ((now - c.last.t) / 1000);
+    c.last = { t: now, frames: c.frames };
+  }
+  const size = sizeOf(S.video);
+  if (size !== c.size) {
+    // The game changed the screen resolution: re-fit every encoder to it.
+    c.size = size;
+    for (const peer of S.peers.values()) peer.applyParams();
+  }
+}
+
+function renderChecks() {
+  if (!S.live || !S.video) return;
+  const s = S.video.getSettings();
+  const screen = S.mode === 'screen';
+  const fps = Math.round(S.capture.fps || 0);
+
+  if (S.sourceLost) setCheck('chk-image', 'bad', 'Partage arrêté');
+  else if (S.video.muted) setCheck('chk-image', 'warn', 'En pause (fenêtre réduite ?)');
+  else setCheck('chk-image', 'ok', `${s.width || '?'}×${s.height || '?'}${fps ? ` · ${fps} FPS` : ''}`);
+
+  const surface = s.displaySurface;
+  const partial = screen && (surface === 'window' || surface === 'browser');
+  setCheck('chk-surface', partial ? 'warn' : 'ok',
+    partial ? `Seulement ${surface === 'window' ? 'une fenêtre' : 'un onglet'} : Google et tes autres apps ne seront pas visibles` : 'Tout ce que tu fais est visible',
+    { hidden: !screen });
+  $('#btn-surface-fix').hidden = !partial;
+
+  if (!screen) setCheck('chk-audio', 'off', '', { hidden: true });
+  else if (!S.settings.gameOn) setCheck('chk-audio', 'off', 'Coupé');
+  else if (S.game) setCheck('chk-audio', 'ok', 'Partagé');
+  else setCheck('chk-audio', 'warn', 'Non partagé : choisis Écran entier et coche Partager l’audio du système');
+  $('#btn-audio-retry').hidden = !(screen && S.settings.gameOn && !S.game);
+
+  const micOn = !!(S.settings.micOn && S.mic);
+  setCheck('chk-mic', micOn ? 'ok' : 'off', micOn ? 'Activé' : 'Coupé');
+
+  const live = [...S.peers.values()].find((p) => p.state === 'live' && p.stats?.codec);
+  if (live) {
+    const st = live.stats;
+    setCheck('chk-encoder', st.hw === false ? 'warn' : 'ok',
+      st.hw === false ? `Processeur · ${codecLabel(st.codec)} (carte graphique non utilisée)` : `Carte graphique · ${codecLabel(st.codec)}`);
+  } else {
+    const hw = Object.entries(S.enc.hw || {}).filter(([, v]) => v).map(([m]) => codecLabel(m));
+    setCheck('chk-encoder', hw.length ? 'ok' : 'wait', hw.length ? `Carte graphique prête · ${hw.join(', ')}` : 'Vérifié dès qu’un spectateur se connecte');
+  }
+
+  const restricted = S.game?.getSettings().restrictOwnAudio;
+  setCheck('chk-echo', restricted ? 'ok' : 'warn',
+    restricted ? 'La voix des spectateurs ne repart pas vers eux' : 'Non pris en charge : mets Chrome ou Edge à jour',
+    { hidden: !S.game });
+  $('#chk-browser').hidden = isChromium || !screen;
 }
 
 function sourceName() {
@@ -557,6 +643,7 @@ function renderMicState() {
   btn.classList.toggle('off', !on);
   setIcon(btn, on ? 'mic' : 'mic-off');
   $('#ctl-mic .ctl-label').textContent = on ? 'Micro activé' : 'Micro coupé';
+  renderChecks();
   renderMini();
 }
 
@@ -569,7 +656,7 @@ function setGame(on) {
   btn.classList.toggle('off', !on);
   setIcon(btn, on ? 'volume' : 'volume-x');
   $('#ctl-sys .ctl-label').textContent = on ? 'Son du PC' : 'Son du PC coupé';
-  updateAudioWarning();
+  renderChecks();
   broadcastState();
 }
 
@@ -708,13 +795,15 @@ async function startLive() {
   });
   S.poller.start();
   S.stopStats = every(statsTick, 1000);
+  S.stopTalk = every(talkTick, 120);
   timerTick();
   setGame(S.settings.gameOn);
   renderPresetLabels();
   renderViewers();
   renderChatEmpty();
   showView('view-host');
-  updateAudioWarning();
+  renderRetour();
+  renderChecks();
   getIceServers();
 }
 
@@ -726,12 +815,14 @@ async function endLive({ ask = true } = {}) {
   for (const peer of [...S.peers.values()]) peer.close('end', { silent: true });
   S.poller?.stop();
   S.stopStats?.();
+  S.stopTalk?.();
   closeMini();
   api('end', { code: S.code, token: S.token }).catch(() => {});
   [S.video, S.game].forEach((t) => t?.stop());
   S.mic?.stop();
   S.micMeter?.stop?.();
-  S.mic = S.micMeter = S.video = S.game = null;
+  S.gameMeter?.stop?.();
+  S.mic = S.micMeter = S.gameMeter = S.video = S.game = null;
   S.mixer?.setGameTrack(null);
   S.mixer?.setMicTrack(null);
   $('#preview').srcObject = null;
@@ -800,9 +891,11 @@ async function statsTick() {
   // Poll the signaling server calmly once everyone is connected.
   const handshaking = [...S.peers.values()].some((p) => p.state === 'connecting');
   if (S.poller) S.poller.idle = peerCount() && !handshaking ? 4000 : 2000;
+  measureCapture();
   renderHostStats(best);
   renderViewerView();
-  if (best?.srcFps) updateSourceInfo(best.srcFps);
+  renderChecks();
+  updateSourceInfo(S.capture.fps || best?.srcFps);
 }
 
 function renderHostStats(st) {
@@ -836,15 +929,39 @@ function timerTick() {
   later(timerTick, 1000);
 }
 
+// Who is talking: Ruben's mic (sent to spectateurs) and each spectateur's
+// voice (shown on the dashboard and the mini-retour).
+function talkTick() {
+  const now = Date.now();
+  const lvl = S.micMeter && S.settings.micOn && S.mic ? S.micMeter() : 0;
+  if (lvl > 0.3) S.talkUntil = now + 450;
+  const talking = now < S.talkUntil;
+  if (talking !== S.talking) {
+    S.talking = talking;
+    broadcast({ t: 'talk', on: talking });
+  }
+  let changed = false;
+  for (const peer of S.peers.values()) {
+    if (!peer.voiceMeter) continue;
+    if (peer.micOn && peer.voiceMeter() > 0.25) peer.speakUntil = now + 450;
+    const speaking = now < peer.speakUntil;
+    if (speaking !== peer.speaking) {
+      peer.speaking = speaking;
+      peer.row?.classList.toggle('speaking', speaking);
+      changed = true;
+    }
+  }
+  if (changed) renderMini();
+}
+
 function meterLoop() {
   requestAnimationFrame(meterLoop);
   if (!S.live || document.hidden) return;
-  const lvl = S.micMeter && S.settings.micOn ? S.micMeter() : 0;
-  $('#ctl-mic').style.setProperty('--lvl', lvl.toFixed(3));
-  for (const peer of S.peers.values()) {
-    if (!peer.row || !peer.voiceMeter) continue;
-    peer.row.classList.toggle('speaking', peer.micOn && peer.voiceMeter() > 0.25);
-  }
+  const mic = S.micMeter && S.settings.micOn && S.mic ? S.micMeter() : 0;
+  const game = S.gameMeter && S.settings.gameOn ? S.gameMeter() : 0;
+  $('#ctl-mic').style.setProperty('--lvl', mic.toFixed(3));
+  $('#chk-mic').style.setProperty('--lvl', mic.toFixed(3));
+  $('#chk-audio').style.setProperty('--lvl', game.toFixed(3));
 }
 
 // =============================================================== viewers
@@ -983,6 +1100,9 @@ function wireSettings() {
   });
   bindRange('#hs-mic-vol', 'micVolume', (v) => S.mixer?.setVoiceVolume(v));
   bindRange('#hs-game-vol', 'gameVolume', (v) => S.settings.gameOn && S.mixer?.setGameVolume(v));
+  bindRange('#hs-viewer-vol', 'viewerVolume', (v) => {
+    for (const p of S.peers.values()) if (p.audioEl) p.audioEl.volume = clamp(v, 0, 1);
+  });
   $('#hs-sink').addEventListener('change', (e) => {
     S.settings.sinkId = e.target.value;
     saveSettings();
@@ -1046,7 +1166,9 @@ html,body{margin:0;height:100%;background:#000;color:#f4f4f8;overflow:hidden;-we
 .i{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
 .mini{position:relative;height:100%}
 video{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#000}
-.m-lost{position:absolute;inset:0;display:grid;place-items:center;padding:20px;background:rgba(8,8,13,.88);font-weight:700;text-align:center}
+.m-lost{position:absolute;inset:0;display:grid;place-content:center;justify-items:center;gap:10px;padding:20px;background:rgba(8,8,13,.9);font-weight:700;text-align:center}
+.m-resume{height:34px;padding:0 14px;border:none;border-radius:10px;background:linear-gradient(135deg,#8b7bff,#c06bff 55%,#ff4f8b);color:#fff;font:inherit;font-weight:700;cursor:pointer}
+.m-talk{display:inline-flex;align-items:center;gap:5px;height:20px;padding:0 8px;border-radius:999px;background:rgba(52,211,153,.2);color:#6ee7b7;font-size:11px;font-weight:700}
 .m-top{position:absolute;top:0;left:0;right:0;display:flex;align-items:center;gap:10px;padding:8px 10px 18px;background:linear-gradient(rgba(0,0,0,.65),transparent)}
 .badge-live{display:inline-flex;align-items:center;gap:6px;height:20px;padding:0 7px;border-radius:6px;background:#ff3b5c;font-size:10.5px;font-weight:800;letter-spacing:.08em}
 .badge-live i{width:6px;height:6px;border-radius:50%;background:#fff;animation:pulse 1.6s ease-in-out infinite}
@@ -1069,11 +1191,12 @@ video{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;backgr
 const MINI_HTML = `
 <div class="mini">
   <video id="m-video" muted autoplay playsinline></video>
-  <div class="m-lost" id="m-lost" hidden>Partage arrêté · reviens sur StreamCast pour le relancer</div>
+  <div class="m-lost" id="m-lost" hidden><span>Partage arrêté</span><button class="m-resume" id="m-resume" type="button">Reprendre le partage</button></div>
   <div class="m-top">
     <span class="badge-live"><i></i>LIVE</span>
     <span class="m-meta" id="m-timer">00:00</span>
     <span class="m-meta"><svg class="i"><use href="#i-users"/></svg><span id="m-count">0</span></span>
+    <span class="m-talk" id="m-talk" hidden><svg class="i"><use href="#i-mic"/></svg><span id="m-talk-name"></span></span>
   </div>
   <figure class="m-thumb" id="m-thumb" title="Ce que voit le spectateur" hidden><img id="m-thumb-img" alt=""><figcaption id="m-thumb-cap"></figcaption></figure>
   <div class="m-chat" id="m-chat" hidden></div>
@@ -1084,11 +1207,13 @@ const MINI_HTML = `
   </div>
 </div>`;
 
+// The button toggles: open the floating retour, or put it away.
+function toggleMini() {
+  if (mini.win || document.pictureInPictureElement) closeMini();
+  else openMini();
+}
+
 async function openMini() {
-  if (mini.win) {
-    mini.win.focus();
-    return;
-  }
   if (!('documentPictureInPicture' in window)) {
     try {
       await $('#preview').requestPictureInPicture();
@@ -1116,16 +1241,24 @@ async function openMini() {
   if (S.video) mini.video.srcObject = new MediaStream([S.video]);
   mini.video.play().catch(() => {});
   doc.getElementById('m-mic').addEventListener('click', () => setMic(!(S.settings.micOn && S.mic)));
+  doc.getElementById('m-resume').addEventListener('click', changeSource);
   doc.getElementById('m-thumb').addEventListener('click', (e) => e.currentTarget.classList.toggle('big'));
   win.addEventListener('pagehide', () => {
     mini.win = null;
     mini.video = null;
-    $('#ctl-mini').setAttribute('aria-pressed', 'false');
+    renderMiniButton();
     broadcastState();
   });
-  $('#ctl-mini').setAttribute('aria-pressed', 'true');
+  renderMiniButton();
   renderMini();
   broadcastState();
+}
+
+function renderMiniButton() {
+  const open = !!mini.win || !!document.pictureInPictureElement;
+  const btn = $('#ctl-mini');
+  btn.setAttribute('aria-pressed', String(open));
+  btn.querySelector('.ctl-label').textContent = open ? 'Ranger le mini-retour' : 'Mini-retour';
 }
 
 function closeMini() {
@@ -1171,6 +1304,9 @@ function renderMini() {
   mic.querySelector('use').setAttribute('href', on ? '#i-mic' : '#i-mic-off');
   mic.title = on ? 'Couper le micro' : 'Activer le micro';
   el('m-lost').hidden = !S.sourceLost;
+  const speaker = [...S.peers.values()].find((p) => p.speaking);
+  el('m-talk').hidden = !speaker;
+  if (speaker) el('m-talk-name').textContent = speaker.name;
 
   const peer = [...S.peers.values()].find((p) => p.state === 'live');
   let text = peer ? 'Connexion…' : 'En attente d’un spectateur';
@@ -1254,16 +1390,28 @@ export function initHost({ show }) {
   $('#ctl-settings').addEventListener('click', openSettings);
   $('#btn-reshare').addEventListener('click', changeSource);
   $('#btn-surface-fix').addEventListener('click', changeSource);
-  $('#ctl-mini').addEventListener('click', openMini);
+  $('#ctl-mini').addEventListener('click', toggleMini);
+  $('#preview').addEventListener('enterpictureinpicture', renderMiniButton);
+  $('#preview').addEventListener('leavepictureinpicture', renderMiniButton);
+  // Capture frame counter (fallback when the browser has no track stats).
+  const pv = $('#preview');
+  if (pv.requestVideoFrameCallback) {
+    const onFrame = () => {
+      S.capture.frames++;
+      pv.requestVideoFrameCallback(onFrame);
+    };
+    pv.requestVideoFrameCallback(onFrame);
+  }
   // Snapshots from the spectateur are only needed while Ruben can see them.
   document.addEventListener('visibilitychange', () => S.live && broadcastState());
   $('#btn-audio-retry').addEventListener('click', changeSource);
-  $('#btn-preview-toggle').addEventListener('click', () => {
+  $('#btn-retour-toggle').addEventListener('click', () => {
     S.settings.preview = !S.settings.preview;
     saveSettings();
-    renderPreview();
+    renderRetour();
+    broadcastState();
   });
-  renderPreview();
+  renderRetour();
 
   $('#btn-copy').addEventListener('click', async () => {
     const ok = await copyText(link());
@@ -1310,12 +1458,13 @@ export function initHost({ show }) {
   });
 }
 
-function renderPreview() {
+// In-app retour (capture + what the spectateur sees): shown or put away.
+function renderRetour() {
   const on = S.settings.preview;
-  $('#preview').hidden = !on;
-  $('#preview-hidden').hidden = on;
-  setIcon($('#btn-preview-toggle'), on ? 'eye' : 'eye-off');
-  $('#btn-preview-toggle').title = on ? 'Masquer l’aperçu' : 'Afficher l’aperçu';
+  $('#retour').classList.toggle('collapsed', !on);
+  const btn = $('#btn-retour-toggle');
+  setIcon(btn, on ? 'eye-off' : 'eye');
+  btn.querySelector('.label').textContent = on ? 'Masquer' : 'Afficher';
 }
 
 export const isLive = () => S.live;

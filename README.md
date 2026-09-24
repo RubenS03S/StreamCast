@@ -1,6 +1,6 @@
 # StreamCast
 
-Partage d'écran en direct du PC de Ruben vers un iPad ou un iPhone : un lien ou un code à 3 chiffres (4 en option), l'image et le son en 60 FPS jusqu'en 4K, le micro dans les deux sens, un chat, et un mini‑lecteur pour garder le live en regardant autre chose.
+Partage d'écran en direct du PC de Ruben vers un iPad ou un iPhone, comme un appel : un lien (ou un code à 3 chiffres, 4 en option), l'image et le son du PC en 60 FPS jusqu'en 4K, et les deux micros ouverts pour se parler. Avec un chat, et un mini‑lecteur pour garder le live en regardant autre chose.
 
 La vidéo et le son passent **directement** du PC à l'iPad (WebRTC, pair‑à‑pair). Le serveur ne sert qu'à se retrouver avec le code : il ne voit jamais passer l'image.
 
@@ -9,19 +9,20 @@ La vidéo et le son passent **directement** du PC à l'iPad (WebRTC, pair‑à�
 **Sur le PC (Ruben)**, dans Chrome ou Edge :
 
 1. Clique **Télécharger sur PC** pour installer l'app (elle s'ouvre ensuite dans sa propre fenêtre, depuis le menu Démarrer).
-2. Choisis la **version de diffusion** (Auto conseillé), active le **micro** si tu veux parler.
+2. Choisis la **version de diffusion** (Auto conseillé). Le **micro** est activé par défaut, comme dans un appel.
 3. **Démarrer le live** → choisis **Écran entier** et coche **Partager l'audio du système**. Tout ce que tu fais est alors filmé en continu : jeu, Google, bureau… StreamCast te prévient si tu as choisi une seule fenêtre.
 4. Envoie le lien avec **Copier le lien**, **Partager** ou le **QR code**. Le lien et le code restent les mêmes d'un live à l'autre.
-5. **Mini-retour** ouvre une petite fenêtre toujours au‑dessus du jeu : ton écran, ce que voit réellement le spectateur, la qualité reçue, la latence, le micro et les messages.
+5. Le bloc **Retour** du tableau de bord montre ta capture et ce que voit réellement le spectateur ; **Masquer** le range. **Mini-retour** ouvre, uniquement quand tu le demandes, une petite fenêtre au‑dessus du jeu (écran, vue du spectateur, qualité, latence, qui parle, micro, messages) ; le même bouton la range.
+6. La **vérification** sous les boutons confirme en direct : image capturée, écran entier, son du PC (avec niveau), micro, encodage par la carte graphique, anti‑écho. En cas d'écran noir ou saccadé, l'aide « Écran noir, figé ou saccadé ? » liste les réglages Windows et Chrome à vérifier.
 
-**Sur l'iPad / l'iPhone** : ouvrir le lien suffit, la connexion est directe. Le son démarre à la première touche sur l'écran (règle d'Apple). Pour l'avoir comme une app : Safari → Partager → *Sur l'écran d'accueil* ; l'app se reconnecte alors toute seule au live de Ruben. Si le live n'a pas encore commencé, l'écran attend et se connecte dès que Ruben le lance.
+**Sur l'iPad / l'iPhone** : ouvrir le lien suffit, la connexion est directe et le micro s'active pour l'appel (Safari demande l'autorisation la première fois ; réglable dans *Réglages › Appel*). Si le son ne démarre pas tout seul, une touche sur l'écran l'active (règle d'Apple). Pour l'avoir comme une app : Safari → Partager → *Sur l'écran d'accueil* ; l'app se reconnecte alors toute seule au live de Ruben. Si le live n'a pas encore commencé, l'écran attend et se connecte dès que Ruben le lance.
 
 ## Fonctionnalités
 
 - **Versions de diffusion** : Auto, 4K, 1440p, 1080p, 720p, 120 FPS, Netteté (texte), Éco (4G/5G), modifiables pendant le live.
 - **Mode Auto** : vise 60 FPS constants. C'est le PC qui fait tout le travail : il encode, mesure en continu la connexion de l'iPad (pertes, gigue, images perdues) et envoie exactement ce qu'elle peut absorber. La résolution est limitée à ce que l'écran du spectateur peut afficher (1440p pour l'iPad), baisse d'un cran si le PC, le réseau ou l'iPad n'arrive plus à suivre, et remonte quand tout redevient fluide. Côté iPad, la latence *Auto* ajoute une petite marge quand le Wi‑Fi est instable.
 - **Codec** : Auto (H.264 décodé en matériel sur iPad/iPhone, AV1 si l'appareil le décode en matériel, comme l'iPhone 17), ou forcé (H.264, AV1, H.265, VP9). Changement à chaud, sans couper le live.
-- **Audio** : son du PC + voix de Ruben mixés en stéréo haute qualité ; micro du spectateur renvoyé vers le PC. Le spectateur règle séparément le volume du jeu et de la voix.
+- **Appel** : son du PC + voix de Ruben mixés en stéréo haute qualité vers l'iPad ; micro de l'iPad vers le PC. Indicateurs de qui parle des deux côtés. Anti‑écho : Chrome/Edge (version 141 et plus) retirent du son capturé la voix du spectateur jouée par StreamCast, elle ne lui revient donc pas. Le spectateur règle séparément le volume du jeu et de la voix ; Ruben règle le volume de la voix des spectateurs.
 - **Lecteur** : plein écran (StreamCast ou lecteur iPad natif), mini‑lecteur (Picture‑in‑Picture), Ajuster / Remplir, zoom à deux doigts et double‑tap, statistiques (résolution, FPS, débit, latence), latence minimale ou fluide.
 - **Retour du stream** : aperçu de la capture, vignette de ce que voit le spectateur (« Vue de Léa »), qualité de son réseau, et fenêtre **Mini‑retour** au‑dessus du jeu.
 - **Chat et réactions**, liste des spectateurs avec qualité reçue, exclusion, validation des spectateurs (option), sons et notifications Windows.
