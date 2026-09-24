@@ -89,6 +89,7 @@ async function install() {
     return;
   }
   const dialog = $('#dlg-install');
+  $('#install-notify-step').hidden = true;
   $('#install-ios').hidden = !isIOS;
   $('#install-desktop').hidden = isIOS;
   openDialog(dialog);

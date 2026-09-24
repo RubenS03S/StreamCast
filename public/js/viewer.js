@@ -923,6 +923,7 @@ function renderNotify() {
 }
 
 function showInstallSteps() {
+  $('#install-notify-step').hidden = false;
   $('#install-ios').hidden = false;
   $('#install-desktop').hidden = true;
   openDialog($('#dlg-install'));
