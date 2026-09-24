@@ -1,6 +1,6 @@
 // StreamCast service worker: makes the app installable and loads the shell
 // instantly. Always tries the network first so updates are picked up.
-const CACHE = 'streamcast-v1';
+const CACHE = 'streamcast-v2';
 const SHELL = [
   '/',
   '/index.html',
@@ -15,6 +15,7 @@ const SHELL = [
   '/js/ui.js',
   '/js/host.js',
   '/js/viewer.js',
+  '/js/hdr.js',
   '/js/vendor/qrcode.mjs',
   '/manifest.webmanifest',
   '/icons/icon.svg',

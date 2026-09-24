@@ -7,6 +7,7 @@ import {
 } from './rtc.js';
 import { canCaptureScreen, isChromium } from './device.js';
 import { toast, openDialog, closeDialog, confirmDialog, openMenu, segmented, showQr, notify, floatReaction } from './ui.js';
+import { hdrDisplay, canProcessVideo, createColorPipeline, measureSdrScale } from './hdr.js';
 
 const DEFAULT_SETTINGS = {
   preset: 'auto',
@@ -24,6 +25,8 @@ const DEFAULT_SETTINGS = {
   sinkId: '',
   viewerVolume: 1,
   preview: true,
+  hdr: 'auto',
+  hdrStrength: 0.5,
 };
 
 const S = {
@@ -32,7 +35,10 @@ const S = {
   facing: 'user',
   code: null,
   token: null,
-  video: null,
+  video: null, // raw capture: settings, stats, end of sharing
+  out: null, // what is sent and shown: the capture, or its colour-corrected copy
+  pipe: null,
+  hdr: { measured: null, measuring: false, slow: 0, reduced: false },
   game: null,
   mic: null,
   micMeter: null,
@@ -99,9 +105,9 @@ class Peer {
 
     this.output = S.mixer.createOutput(this.id);
     this.output.setGains(this.pref.game, this.pref.voice);
-    const stream = new MediaStream([S.video, this.output.track]);
+    const stream = new MediaStream([S.out, this.output.track]);
     const t = this.target();
-    this.vt = pc.addTransceiver(S.video, {
+    this.vt = pc.addTransceiver(S.out, {
       direction: 'sendonly',
       streams: [stream],
       sendEncodings: [{ maxBitrate: Math.round(t.maxBitrate), maxFramerate: t.fps, scaleResolutionDownBy: t.scale, priority: 'high', networkPriority: 'high' }],
@@ -222,7 +228,7 @@ class Peer {
   // Encoding target for this viewer: preset ∩ viewer preference ∩ adaptive level.
   target() {
     const p = preset();
-    const srcH = S.video?.getSettings().height || 1080;
+    const srcH = outHeight();
     const vq = VIEWER_QUALITY[this.pref.quality] || VIEWER_QUALITY.auto;
     let cap = Math.min(p.maxHeight, srcH);
     let fps = p.fps;
@@ -449,6 +455,9 @@ async function captureSource() {
 
 function useCapture(stream) {
   const old = [S.video, S.game];
+  const oldPipe = S.pipe;
+  S.pipe = null;
+  S.out = null;
   S.video = stream.getVideoTracks()[0];
   S.game = stream.getAudioTracks()[0] || null;
   S.video.contentHint = S.mode === 'camera' ? 'motion' : preset().hint;
@@ -467,10 +476,8 @@ function useCapture(stream) {
   S.gameMeter = S.game ? S.mixer.meter(S.game) : null;
   S.capture = { last: null, fps: 0, frames: 0, size: sizeOf(S.video) };
   S.mixer.setGameVolume(S.settings.gameOn ? S.settings.gameVolume : 0);
-  $('#preview').srcObject = new MediaStream([S.video]);
-  for (const peer of S.peers.values()) {
-    peer.vt?.sender.replaceTrack(S.video).then(() => peer.applyParams()).catch(() => {});
-  }
+  applyColor();
+  oldPipe?.stop();
   for (const t of old) {
     if (!t || t === S.video || t === S.game) continue;
     t.removeEventListener('ended', onSourceEnded);
@@ -478,10 +485,98 @@ function useCapture(stream) {
   }
   S.sourceLost = false;
   $('#source-lost').hidden = true;
-  if (mini.video) mini.video.srcObject = new MediaStream([S.video]);
   updateSourceInfo();
   renderChecks();
   broadcastState();
+}
+
+// ============================================================ couleurs HDR
+// Correction factor for an HDR desktop (1 = none).
+function hdrK() {
+  if (S.mode !== 'screen' || S.settings.hdr === 'off') return 1;
+  if (S.settings.hdr === 'manual') return 1 + 3 * clamp(S.settings.hdrStrength, 0, 1);
+  const m = S.hdr.measured;
+  return m?.ok && m.k >= 1.08 ? m.k : 1;
+}
+
+// While correcting, 4K is brought down to 1440p on the GPU (what the iPad
+// shows anyway) unless a 4K or text preset is chosen.
+const pipeMaxHeight = () => (S.hdr.reduced ? 1080 : ['4k', 'text'].includes(preset().id) ? 0 : 1440);
+
+// A correction slower than ~14 ms per frame cannot hold 60 FPS: work at
+// 1080p instead, and if that is still too slow, say so.
+function checkPipeSpeed() {
+  const pipe = S.pipe;
+  if (!pipe || !pipe.fps) {
+    S.hdr.slow = 0;
+    return;
+  }
+  S.hdr.slow = pipe.ms > 14 ? S.hdr.slow + 1 : 0;
+  if (S.hdr.slow >= 5 && !S.hdr.reduced) {
+    S.hdr.reduced = true;
+    S.hdr.slow = 0;
+    pipe.setMaxHeight(pipeMaxHeight());
+  }
+}
+
+const outHeight = () => S.pipe?.size?.height || S.video?.getSettings().height || 1080;
+
+function setOut(track) {
+  if (!track || S.out === track) return;
+  S.out = track;
+  S.out.contentHint = S.video?.contentHint || '';
+  $('#preview').srcObject = new MediaStream([S.out]);
+  if (mini.video) mini.video.srcObject = new MediaStream([S.out]);
+  for (const peer of S.peers.values()) {
+    peer.vt?.sender.replaceTrack(S.out).then(() => peer.applyParams()).catch(() => {});
+  }
+}
+
+// Starts, updates or removes the GPU colour correction as needed.
+function applyColor() {
+  if (!S.video) return;
+  const k = hdrK();
+  const need = k > 1.001 && canProcessVideo() && S.video.readyState === 'live';
+  if (need && !S.pipe) {
+    try {
+      S.pipe = createColorPipeline(S.video, { k, maxHeight: pipeMaxHeight() });
+      S.pipe.onSize = () => {
+        for (const peer of S.peers.values()) peer.applyParams();
+      };
+      setOut(S.pipe.track);
+    } catch (err) {
+      console.warn('colour pipeline', err);
+      S.pipe = null;
+      setOut(S.video);
+    }
+  } else if (need) {
+    S.pipe.setK(k);
+    S.pipe.setMaxHeight(pipeMaxHeight());
+  } else if (S.pipe) {
+    const old = S.pipe;
+    S.pipe = null;
+    setOut(S.video);
+    setTimeout(() => old.stop(), 800);
+  } else {
+    setOut(S.video);
+  }
+  renderChecks();
+}
+
+async function calibrate({ quiet = false } = {}) {
+  if (!S.live || !S.video || S.mode !== 'screen' || S.hdr.measuring) return;
+  S.hdr.measuring = true;
+  renderChecks();
+  const m = await measureSdrScale(S.video);
+  S.hdr.measuring = false;
+  S.hdr.measured = m;
+  applyColor();
+  if (m.ok && m.k >= 1.08) toast('Écran HDR : couleurs corrigées pour le spectateur', { icon: 'check' });
+  else if (!quiet) {
+    toast(m.ok ? 'Couleurs correctes, aucune correction nécessaire' : 'Mesure impossible : garde StreamCast visible sur l’écran partagé', {
+      type: m.ok ? 'info' : 'warn',
+    });
+  }
 }
 
 const sizeOf = (track) => {
@@ -580,6 +675,21 @@ function renderChecks() {
     setCheck('chk-encoder', hw.length ? 'ok' : 'wait', hw.length ? `Carte graphique prête · ${hw.join(', ')}` : 'Vérifié dès qu’un spectateur se connecte');
   }
 
+  const showHdr = screen && (hdrDisplay() || S.settings.hdr !== 'auto' || !!S.hdr.measured);
+  const k = hdrK();
+  let hdrState = 'wait';
+  let hdrText = 'Écran HDR détecté';
+  if (S.hdr.measuring) hdrText = 'Mesure des couleurs…';
+  else if (S.settings.hdr === 'off') [hdrState, hdrText] = ['off', 'Correction désactivée'];
+  else if (k > 1.001 && !canProcessVideo()) [hdrState, hdrText] = ['warn', 'Correction impossible dans ce navigateur : coupe le HDR avec Win + Alt + B'];
+  else if (S.pipe?.error) [hdrState, hdrText] = ['warn', 'Correction indisponible sur cette carte graphique : coupe le HDR avec Win + Alt + B'];
+  else if (S.pipe && S.hdr.reduced && S.hdr.slow >= 3) [hdrState, hdrText] = ['warn', `Correction trop lente pour 60 FPS (${S.pipe.fps} FPS) : coupe le HDR avec Win + Alt + B`];
+  else if (k > 1.001) [hdrState, hdrText] = ['ok', `Correction active${S.settings.hdr === 'manual' ? ' (manuelle)' : ''}${S.pipe?.fps ? ` · ${S.pipe.fps} FPS` : ''}`];
+  else if (S.hdr.measured?.ok) [hdrState, hdrText] = ['ok', 'Couleurs correctes, aucune correction nécessaire'];
+  else if (S.hdr.measured) [hdrState, hdrText] = ['warn', 'Mesure impossible : garde StreamCast visible sur l’écran partagé, puis Recalibrer'];
+  setCheck('chk-hdr', hdrState, hdrText, { hidden: !showHdr });
+  $('#btn-hdr-calib').hidden = !showHdr || S.hdr.measuring || S.settings.hdr !== 'auto';
+
   const restricted = S.game?.getSettings().restrictOwnAudio;
   setCheck('chk-echo', restricted ? 'ok' : 'warn',
     restricted ? 'La voix des spectateurs ne repart pas vers eux' : 'Non pris en charge : mets Chrome ou Edge à jour',
@@ -665,8 +775,12 @@ async function setPreset(id) {
   S.settings.preset = id;
   saveSettings();
   const p = preset();
+  S.pipe?.setMaxHeight(pipeMaxHeight());
   if (S.video && S.video.readyState === 'live') {
-    if (S.mode === 'screen') S.video.contentHint = p.hint;
+    if (S.mode === 'screen') {
+      S.video.contentHint = p.hint;
+      if (S.out) S.out.contentHint = p.hint;
+    }
     try {
       await S.video.applyConstraints({ frameRate: { ideal: p.fps, max: p.fps } });
     } catch {}
@@ -805,6 +919,7 @@ async function startLive() {
   renderRetour();
   renderChecks();
   getIceServers();
+  if (S.mode === 'screen' && S.settings.hdr === 'auto' && hdrDisplay()) setTimeout(() => calibrate({ quiet: true }), 600);
 }
 
 async function endLive({ ask = true } = {}) {
@@ -818,11 +933,14 @@ async function endLive({ ask = true } = {}) {
   S.stopTalk?.();
   closeMini();
   api('end', { code: S.code, token: S.token }).catch(() => {});
+  S.pipe?.stop();
+  S.pipe = null;
   [S.video, S.game].forEach((t) => t?.stop());
   S.mic?.stop();
   S.micMeter?.stop?.();
   S.gameMeter?.stop?.();
-  S.mic = S.micMeter = S.gameMeter = S.video = S.game = null;
+  S.mic = S.micMeter = S.gameMeter = S.video = S.out = S.game = null;
+  S.hdr = { measured: null, measuring: false, slow: 0, reduced: false };
   S.mixer?.setGameTrack(null);
   S.mixer?.setMicTrack(null);
   $('#preview').srcObject = null;
@@ -892,6 +1010,7 @@ async function statsTick() {
   const handshaking = [...S.peers.values()].some((p) => p.state === 'connecting');
   if (S.poller) S.poller.idle = peerCount() && !handshaking ? 4000 : 2000;
   measureCapture();
+  checkPipeSpeed();
   renderHostStats(best);
   renderViewerView();
   renderChecks();
@@ -1109,6 +1228,31 @@ function wireSettings() {
     for (const p of S.peers.values()) p.audioEl?.setSinkId?.(S.settings.sinkId).catch(() => {});
   });
 
+  const hdrRow = $('#hs-hdr-k-row');
+  const setHdrUi = segmented(
+    $('#hs-hdr'),
+    [{ id: 'auto', label: 'Auto' }, { id: 'manual', label: 'Manuelle' }, { id: 'off', label: 'Désactivée' }],
+    S.settings.hdr,
+    (id) => {
+      S.settings.hdr = id;
+      saveSettings();
+      hdrRow.hidden = id !== 'manual';
+      applyColor();
+      if (id === 'auto' && S.live && !S.hdr.measured) calibrate();
+    },
+  );
+  hdrRow.hidden = S.settings.hdr !== 'manual';
+  bindRange('#hs-hdr-k', 'hdrStrength', () => applyColor());
+  $('#hs-hdr-calib').addEventListener('click', () => {
+    if (!S.live) return toast('Lance le live pour mesurer ton écran');
+    S.settings.hdr = 'auto';
+    saveSettings();
+    setHdrUi('auto');
+    hdrRow.hidden = true;
+    closeDialog($('#dlg-host'));
+    setTimeout(calibrate, 300);
+  });
+
   $('#hs-newcode').addEventListener('click', newCode);
   bindSwitch('#hs-digits', 'digits', null, (on) => (on ? 4 : 3), (v) => v === 4);
   $('#hs-digits').addEventListener('change', () => S.live && newCode());
@@ -1238,7 +1382,7 @@ async function openMini() {
   doc.body.append($('#sprite').cloneNode(true));
   doc.body.insertAdjacentHTML('beforeend', MINI_HTML);
   mini.video = doc.getElementById('m-video');
-  if (S.video) mini.video.srcObject = new MediaStream([S.video]);
+  if (S.out) mini.video.srcObject = new MediaStream([S.out]);
   mini.video.play().catch(() => {});
   doc.getElementById('m-mic').addEventListener('click', () => setMic(!(S.settings.micOn && S.mic)));
   doc.getElementById('m-resume').addEventListener('click', changeSource);
@@ -1390,6 +1534,7 @@ export function initHost({ show }) {
   $('#ctl-settings').addEventListener('click', openSettings);
   $('#btn-reshare').addEventListener('click', changeSource);
   $('#btn-surface-fix').addEventListener('click', changeSource);
+  $('#btn-hdr-calib').addEventListener('click', () => calibrate());
   $('#ctl-mini').addEventListener('click', toggleMini);
   $('#preview').addEventListener('enterpictureinpicture', renderMiniButton);
   $('#preview').addEventListener('leavepictureinpicture', renderMiniButton);

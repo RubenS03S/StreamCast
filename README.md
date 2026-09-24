@@ -24,6 +24,7 @@ La vidéo et le son passent **directement** du PC à l'iPad (WebRTC, pair‑à�
 - **Codec** : Auto (H.264 décodé en matériel sur iPad/iPhone, AV1 si l'appareil le décode en matériel, comme l'iPhone 17), ou forcé (H.264, AV1, H.265, VP9). Changement à chaud, sans couper le live.
 - **Appel** : son du PC + voix de Ruben mixés en stéréo haute qualité vers l'iPad ; micro de l'iPad vers le PC. Indicateurs de qui parle des deux côtés. Anti‑écho : Chrome/Edge (version 141 et plus) retirent du son capturé la voix du spectateur jouée par StreamCast, elle ne lui revient donc pas. Le spectateur règle séparément le volume du jeu et de la voix ; Ruben règle le volume de la voix des spectateurs.
 - **Lecteur** : plein écran (StreamCast ou lecteur iPad natif), mini‑lecteur (Picture‑in‑Picture), Ajuster / Remplir, zoom à deux doigts et double‑tap, statistiques (résolution, FPS, débit, latence), latence minimale ou fluide.
+- **Écrans HDR (OLED…)** : avec le HDR de Windows, certaines captures arrivent trop claires et délavées. Au lancement du live, StreamCast affiche une seconde un écran noir puis gris pour mesurer l'éclaircissement, et corrige les couleurs sur la carte graphique avant l'envoi (Réglages › Couleurs HDR : Auto, Manuelle ou Désactivée). Si la capture est déjà correcte, rien n'est modifié.
 - **Retour du stream** : aperçu de la capture, vignette de ce que voit le spectateur (« Vue de Léa »), qualité de son réseau, et fenêtre **Mini‑retour** au‑dessus du jeu.
 - **Chat et réactions**, liste des spectateurs avec qualité reçue, exclusion, validation des spectateurs (option), sons et notifications Windows.
 - **Reconnexion automatique** si le réseau coupe ou si le live redémarre.
@@ -61,6 +62,7 @@ La connexion directe marche sur la grande majorité des réseaux. Pour les rése
 - PC en **Ethernet**, iPad en Wi‑Fi **5 GHz ou 6 GHz** près de la box.
 - Chrome/Edge avec l'**accélération matérielle** activée : les stats du live indiquent *GPU* quand l'encodage passe par la carte graphique.
 - Jeux en **plein écran fenêtré** (borderless) pour une capture fluide.
+- Écran HDR : garde la fenêtre StreamCast visible sur l'écran partagé au lancement du live (mesure des couleurs). Si la correction ne suffit pas, **Win + Alt + B** coupe le HDR de Windows le temps du live.
 - Casque conseillé côté PC pour éviter l'écho.
 
 ## Structure
