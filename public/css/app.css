@@ -668,43 +668,6 @@ input[type="range"] {
   color: var(--accent);
 }
 
-/* ---------------------------------------------------------------- invite */
-.invite {
-  flex: 1;
-  display: grid;
-  place-items: center;
-  padding: 12px calc(20px + var(--sr)) calc(40px + var(--sb)) calc(20px + var(--sl));
-}
-
-.invite-card {
-  width: 100%;
-  max-width: 420px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 14px;
-  padding: 36px 28px 20px;
-  text-align: center;
-}
-
-.invite-card h1 {
-  font-size: 34px;
-  font-weight: 750;
-  margin-top: 6px;
-}
-
-.invite-code {
-  margin: -6px 0 10px;
-  color: var(--text-2);
-  font-variant-numeric: tabular-nums;
-}
-
-.invite-code b {
-  color: var(--text);
-  font-family: var(--font-num);
-  letter-spacing: 0.08em;
-}
-
 /* ------------------------------------------------------------- host live */
 .live-meta {
   display: flex;
@@ -826,6 +789,36 @@ input[type="range"] {
   border: 1px solid rgba(255, 255, 255, 0.1);
   font-size: 13px;
   font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.viewer-view {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 2;
+  width: min(32%, 300px);
+  margin: 0;
+  border-radius: 14px;
+  overflow: hidden;
+  background: #000;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.55);
+}
+
+.viewer-view img {
+  display: block;
+  width: 100%;
+}
+
+.viewer-view figcaption {
+  padding: 6px 10px;
+  background: rgba(10, 10, 16, 0.85);
+  font-size: 12px;
+  font-weight: 650;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
   overflow: hidden;
@@ -1067,6 +1060,23 @@ input[type="range"] {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.viewer-info .viewer-net {
+  font-weight: 650;
+  color: var(--text-3);
+}
+
+.viewer-net[data-tone="good"] {
+  color: var(--ok);
+}
+
+.viewer-net[data-tone="mid"] {
+  color: var(--mid);
+}
+
+.viewer-net[data-tone="bad"] {
+  color: var(--bad);
 }
 
 .viewer-mic {
@@ -1466,8 +1476,7 @@ input[type="range"] {
   animation: ripple 2s ease-out infinite;
 }
 
-.state-overlay[data-kind="ended"] .ring,
-.state-overlay[data-kind="paused"] .ring {
+.state-overlay[data-kind="ended"] .ring {
   display: none;
 }
 
@@ -1487,6 +1496,23 @@ input[type="range"] {
 
 .state-sub:empty {
   display: none;
+}
+
+.paused-pill {
+  position: absolute;
+  z-index: 5;
+  top: calc(70px + var(--st));
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 7px 14px;
+  border-radius: 999px;
+  background: rgba(18, 18, 26, 0.7);
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  font-size: 13.5px;
+  font-weight: 650;
+  pointer-events: none;
 }
 
 .unmute {

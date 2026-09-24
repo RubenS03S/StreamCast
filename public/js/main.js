@@ -1,11 +1,10 @@
-import { HOST_NAME } from './config.js';
 import { $, $$, storage } from './util.js';
 import { isIOS, isMobile, isDesktop, isWindows, isStandalone } from './device.js';
 import { wireDialogs, openDialog, toast, closeMenus } from './ui.js';
 import { initHost, isLive } from './host.js';
 import { initViewer, watch, isWatching } from './viewer.js';
 
-const VIEWS = ['view-home', 'view-invite', 'view-host', 'view-watch'];
+const VIEWS = ['view-home', 'view-host', 'view-watch'];
 
 function show(id) {
   closeMenus();
@@ -69,27 +68,6 @@ function wireHome() {
   if (isMobile) $('#home-grid').classList.add('viewer-first');
 }
 
-// =============================================================== invite
-function showInvite(code) {
-  $('#invite-code').textContent = code;
-  $('#invite-host').textContent = HOST_NAME;
-  $('#invite-avatar').textContent = HOST_NAME[0];
-  $('#invite-name').value = storage.get('name', '');
-  show('view-invite');
-}
-
-function wireInvite() {
-  $('#invite-form').addEventListener('submit', (e) => {
-    e.preventDefault();
-    const code = $('#invite-code').textContent;
-    const name = $('#invite-name').value.trim().slice(0, 32);
-    storage.set('name', name);
-    $('#invite-name').blur();
-    watch(code, name);
-  });
-  $('#btn-invite-other').addEventListener('click', goHome);
-}
-
 // ============================================================== install
 let deferredPrompt = null;
 
@@ -141,18 +119,19 @@ function boot() {
   wireDialogs();
   wireInstall();
   wireHome();
-  wireInvite();
   initHost({ show });
   initViewer({ show, exit: goHome });
 
-  const code = codeFromUrl();
-  if (code) showInvite(code);
+  // Opening a live link connects straight away. The home-screen app on
+  // iPad/iPhone does the same with the last live watched.
+  const code = codeFromUrl() || (isMobile && isStandalone() ? storage.get('lastCode') : null);
+  if (code) watch(code, storage.get('name', ''));
   else show('view-home');
 
   window.addEventListener('popstate', () => {
     if (isLive() || isWatching()) return;
     const c = codeFromUrl();
-    if (c) showInvite(c);
+    if (c) watch(c, storage.get('name', ''));
     else show('view-home');
   });
 

@@ -10,18 +10,20 @@ La vidéo et le son passent **directement** du PC à l'iPad (WebRTC, pair‑à�
 
 1. Clique **Télécharger sur PC** pour installer l'app (elle s'ouvre ensuite dans sa propre fenêtre, depuis le menu Démarrer).
 2. Choisis la **version de diffusion** (Auto conseillé), active le **micro** si tu veux parler.
-3. **Démarrer le live** → choisis **Écran entier** et coche **Partager l'audio du système** pour envoyer le son du jeu.
-4. Envoie le lien avec **Copier le lien**, **Partager** ou le **QR code**. Le code reste le même d'un live à l'autre.
+3. **Démarrer le live** → choisis **Écran entier** et coche **Partager l'audio du système**. Tout ce que tu fais est alors filmé en continu : jeu, Google, bureau… StreamCast te prévient si tu as choisi une seule fenêtre.
+4. Envoie le lien avec **Copier le lien**, **Partager** ou le **QR code**. Le lien et le code restent les mêmes d'un live à l'autre.
+5. **Mini-retour** ouvre une petite fenêtre toujours au‑dessus du jeu : ton écran, ce que voit réellement le spectateur, la qualité reçue, la latence, le micro et les messages.
 
-**Sur l'iPad / l'iPhone** : ouvrir le lien → **Regarder**. Pour l'avoir comme une app : Safari → Partager → *Sur l'écran d'accueil*. Si le live n'a pas encore commencé, l'écran attend et se connecte tout seul dès que Ruben lance le live.
+**Sur l'iPad / l'iPhone** : ouvrir le lien suffit, la connexion est directe. Le son démarre à la première touche sur l'écran (règle d'Apple). Pour l'avoir comme une app : Safari → Partager → *Sur l'écran d'accueil* ; l'app se reconnecte alors toute seule au live de Ruben. Si le live n'a pas encore commencé, l'écran attend et se connecte dès que Ruben le lance.
 
 ## Fonctionnalités
 
 - **Versions de diffusion** : Auto, 4K, 1440p, 1080p, 720p, 120 FPS, Netteté (texte), Éco (4G/5G), modifiables pendant le live.
-- **Mode Auto** : vise 60 FPS constants. La résolution est limitée à ce que l'écran du spectateur peut afficher (1440p pour l'iPad), puis baisse d'un cran si le PC, le réseau ou l'iPad n'arrive plus à suivre, et remonte quand tout redevient fluide.
+- **Mode Auto** : vise 60 FPS constants. C'est le PC qui fait tout le travail : il encode, mesure en continu la connexion de l'iPad (pertes, gigue, images perdues) et envoie exactement ce qu'elle peut absorber. La résolution est limitée à ce que l'écran du spectateur peut afficher (1440p pour l'iPad), baisse d'un cran si le PC, le réseau ou l'iPad n'arrive plus à suivre, et remonte quand tout redevient fluide. Côté iPad, la latence *Auto* ajoute une petite marge quand le Wi‑Fi est instable.
 - **Codec** : Auto (H.264 décodé en matériel sur iPad/iPhone, AV1 si l'appareil le décode en matériel, comme l'iPhone 17), ou forcé (H.264, AV1, H.265, VP9). Changement à chaud, sans couper le live.
 - **Audio** : son du PC + voix de Ruben mixés en stéréo haute qualité ; micro du spectateur renvoyé vers le PC. Le spectateur règle séparément le volume du jeu et de la voix.
 - **Lecteur** : plein écran (StreamCast ou lecteur iPad natif), mini‑lecteur (Picture‑in‑Picture), Ajuster / Remplir, zoom à deux doigts et double‑tap, statistiques (résolution, FPS, débit, latence), latence minimale ou fluide.
+- **Retour du stream** : aperçu de la capture, vignette de ce que voit le spectateur (« Vue de Léa »), qualité de son réseau, et fenêtre **Mini‑retour** au‑dessus du jeu.
 - **Chat et réactions**, liste des spectateurs avec qualité reçue, exclusion, validation des spectateurs (option), sons et notifications Windows.
 - **Reconnexion automatique** si le réseau coupe ou si le live redémarre.
 

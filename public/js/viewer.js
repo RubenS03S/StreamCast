@@ -7,7 +7,7 @@ import {
 import { isIPad, isIOS, deviceLabel, canElementFullscreen, fullscreenElement } from './device.js';
 import { toast, openDialog, segmented, floatReaction } from './ui.js';
 
-const DEFAULT_PREFS = { quality: 'auto', latency: 'min', fit: 'contain', stats: false, fsMode: 'app', game: 1, voice: 1 };
+const DEFAULT_PREFS = { quality: 'auto', latency: 'auto', fit: 'contain', stats: false, fsMode: 'app', game: 1, voice: 1 };
 
 const V = {
   active: false,
@@ -31,6 +31,9 @@ const V = {
   onConnected: null,
   onFailed: null,
   unread: 0,
+  thumbEvery: 0,
+  stopThumbs: null,
+  jbBoostUntil: 0,
   prefs: { ...DEFAULT_PREFS, ...storage.get('viewerPrefs', {}) },
 };
 
@@ -49,7 +52,7 @@ function setState(kind, title = '', sub = '', action = null) {
   $('#w-state-title').textContent = title;
   $('#w-state-sub').textContent = sub;
   $('#player').dataset.state = kind;
-  if (kind !== 'live' && kind !== 'paused') {
+  if (kind !== 'live') {
     $('#react-picker').hidden = true;
     $('#w-quality').dataset.tone = 'wait';
     $('#w-host-mic').hidden = true;
@@ -61,6 +64,7 @@ function setState(kind, title = '', sub = '', action = null) {
     btn.onclick = action.onClick;
   }
   $('#player').classList.toggle('has-state', visible);
+  if (visible) $('#w-paused').hidden = true;
   $('#player').classList.toggle('no-video', !video().srcObject);
   if (visible) showControls(true);
 }
@@ -68,7 +72,8 @@ function setState(kind, title = '', sub = '', action = null) {
 // ================================================================== join
 export async function watch(code, name) {
   const v = video();
-  // Unlock audio playback while we still have the user's tap.
+  // With a tap (code typed by hand) this unlocks sound right away; when the
+  // link opens the live directly, playback starts muted until the first tap.
   v.muted = false;
   v.play().catch(() => {});
 
@@ -278,6 +283,7 @@ function closePc() {
   V.cancelDisc?.();
   V.stopStats?.();
   V.stopStats = null;
+  applyThumbs(0);
   if (V.pc) {
     V.pc.onconnectionstatechange = null;
     try {
@@ -347,11 +353,34 @@ function onHostMessage(m) {
 }
 
 function applyHostState() {
-  if (V.status === 'live' || V.status === 'paused') {
-    if (V.host.paused) setState('paused', 'Pause', `${HOST_NAME} change de source…`);
-    else if (V.status === 'paused') setState('live');
-  }
+  $('#w-paused').hidden = !(V.status === 'live' && V.host.paused);
   $('#w-host-mic').hidden = !V.host.mic;
+  applyThumbs(V.status === 'live' ? Number(V.host.thumbs) || 0 : 0);
+}
+
+// Small snapshots of what this screen shows, sent to Ruben's "retour" so he
+// can check what the spectateur really sees. Only while he asks for them.
+function applyThumbs(ms) {
+  ms = ms > 0 ? Math.max(1500, ms) : 0;
+  if (V.thumbEvery === ms) return;
+  V.thumbEvery = ms;
+  V.stopThumbs?.();
+  V.stopThumbs = ms ? every(sendThumb, ms) : null;
+}
+
+function sendThumb() {
+  const v = video();
+  if (V.dc?.readyState !== 'open' || !v.videoWidth || document.hidden) return;
+  const w = 384;
+  const h = Math.round((w * v.videoHeight) / v.videoWidth);
+  const c = (V.thumbCanvas ||= document.createElement('canvas'));
+  c.width = w;
+  c.height = h;
+  try {
+    c.getContext('2d').drawImage(v, 0, 0, w, h);
+    const url = c.toDataURL('image/jpeg', 0.6);
+    if (url.length < 60000) send({ t: 'thumb', url });
+  } catch {}
 }
 
 // ================================================================ playback
@@ -370,6 +399,13 @@ async function play() {
   }
 }
 
+function unmute() {
+  const v = video();
+  v.muted = false;
+  v.play().catch(() => {});
+  $('#w-unmute').hidden = true;
+}
+
 function resumePlayback() {
   const v = video();
   if (V.active && v.srcObject && v.paused) play();
@@ -383,7 +419,8 @@ function applyFit() {
 
 function applyLatency() {
   if (!V.pc || !supportsJitterTarget()) return;
-  const target = V.prefs.latency === 'smooth' ? 250 : null;
+  const boost = V.prefs.latency === 'auto' && Date.now() < V.jbBoostUntil;
+  const target = V.prefs.latency === 'smooth' || boost ? 250 : null;
   for (const r of V.pc.getReceivers()) {
     try {
       r.jitterBufferTarget = target;
@@ -492,6 +529,16 @@ function startStats() {
     const st = await receiverStats(V.pc, V.stats);
     V.stats = st;
     V.sentFreezes += st.newFreezes || 0;
+    // Auto latency: on an unstable connection, keep a small buffer for a
+    // minute so the image stays smooth instead of stuttering.
+    if (V.prefs.latency === 'auto' && ((st.newFreezes || 0) > 0 || (st.loss || 0) > 0.03 || (st.jitterMs || 0) > 80)) {
+      const wasBoosted = Date.now() < V.jbBoostUntil;
+      V.jbBoostUntil = Date.now() + 60_000;
+      if (!wasBoosted) applyLatency();
+    } else if (V.jbBoostUntil && Date.now() > V.jbBoostUntil) {
+      V.jbBoostUntil = 0;
+      applyLatency();
+    }
     renderQuality(st);
     if (++V.tick % 2 === 0) {
       send({
@@ -731,7 +778,7 @@ function wireSettings() {
   });
   const latencyRow = $('#vs-latency-row');
   latencyRow.hidden = !supportsJitterTarget();
-  segmented($('#vs-latency'), [{ id: 'min', label: 'Minimale' }, { id: 'smooth', label: 'Fluide' }], V.prefs.latency, (v) => {
+  segmented($('#vs-latency'), [{ id: 'auto', label: 'Auto' }, { id: 'min', label: 'Minimale' }, { id: 'smooth', label: 'Fluide' }], V.prefs.latency, (v) => {
     V.prefs.latency = v;
     savePrefs();
     applyLatency();
@@ -844,10 +891,13 @@ export function initViewer({ show, exit }) {
   const pip = $('#w-pip');
   pip.addEventListener('click', togglePip);
   pip.hidden = !pipSupported();
-  $('#w-unmute').addEventListener('click', () => {
-    v.muted = false;
-    play();
-  });
+  $('#w-unmute').addEventListener('click', unmute);
+  // Any tap on the player turns the sound on when it started muted.
+  const tapUnmute = () => {
+    if (!$('#w-unmute').hidden) unmute();
+  };
+  $('#player').addEventListener('touchend', tapUnmute, { passive: true });
+  $('#player').addEventListener('click', tapUnmute);
 
   const picker = $('#react-picker');
   picker.replaceChildren(...REACTIONS.map((emoji) => h('button', { type: 'button', text: emoji, 'aria-label': emoji })));
@@ -888,7 +938,7 @@ export function initViewer({ show, exit }) {
     if (!V.active || document.hidden) return;
     requestWakeLock();
     resumePlayback();
-    if (['live', 'paused'].includes(V.status) && (!V.pc || ['failed', 'closed', 'disconnected'].includes(V.pc.connectionState))) lost();
+    if (V.status === 'live' && (!V.pc || ['failed', 'closed', 'disconnected'].includes(V.pc.connectionState))) lost();
   });
 
   window.addEventListener('keydown', (e) => {

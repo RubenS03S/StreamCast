@@ -20,7 +20,7 @@
   <script type="module" src="/js/main.js"></script>
 </head>
 <body data-view="view-home">
-  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <svg id="sprite" width="0" height="0" style="position:absolute" aria-hidden="true">
     <defs>
       <linearGradient id="brand-grad" x1="0" y1="0" x2="1" y2="1">
         <stop offset="0" stop-color="#8b7bff"/>
@@ -107,24 +107,6 @@
     </main>
   </section>
 
-  <!-- ========================================================== INVITE -->
-  <section id="view-invite" class="view view-invite" hidden>
-    <header class="topbar">
-      <div class="brand"><svg class="logo"><use href="#logo"/></svg><span>StreamCast</span></div>
-      <button class="btn btn-ghost btn-sm btn-install" type="button" hidden><svg class="i"><use href="#i-download"/></svg><span class="label">Télécharger</span></button>
-    </header>
-    <main class="invite">
-      <form class="card invite-card" id="invite-form" autocomplete="off">
-        <div class="avatar xl" id="invite-avatar">R</div>
-        <h1 id="invite-host">Ruben</h1>
-        <p class="invite-code">Code <b id="invite-code"></b></p>
-        <input id="invite-name" class="input" placeholder="Ton prénom" maxlength="32" aria-label="Ton prénom" enterkeyhint="go">
-        <button class="btn btn-primary btn-xl" type="submit" id="btn-watch"><svg class="i"><use href="#i-play"/></svg>Regarder</button>
-        <button class="link-btn" type="button" id="btn-invite-other">Autre code</button>
-      </form>
-    </main>
-  </section>
-
   <!-- ======================================================= HOST LIVE -->
   <section id="view-host" class="view view-host" hidden>
     <header class="topbar">
@@ -142,15 +124,19 @@
           <video id="preview" muted playsinline autoplay disablepictureinpicture></video>
           <div class="preview-hidden" id="preview-hidden" hidden><svg class="i"><use href="#i-eye-off"/></svg>Aperçu masqué</div>
           <div class="react-layer" id="host-react-layer"></div>
+          <figure class="viewer-view" id="viewer-view" hidden>
+            <img id="viewer-view-img" alt="Ce que voit le spectateur">
+            <figcaption id="viewer-view-cap"></figcaption>
+          </figure>
           <div class="preview-bar">
             <span class="pill" id="src-info">—</span>
             <button class="icon-btn glass sm" id="btn-preview-toggle" type="button" title="Masquer l’aperçu"><svg class="i"><use href="#i-eye"/></svg></button>
           </div>
           <div class="source-lost" id="source-lost" hidden>
             <svg class="i lg"><use href="#i-monitor"/></svg>
-            <b>Partage interrompu</b>
-            <span>Les spectateurs restent connectés</span>
-            <button class="btn btn-primary" id="btn-reshare" type="button">Choisir une source</button>
+            <b>Partage arrêté</b>
+            <span>Les spectateurs restent connectés et voient la dernière image</span>
+            <button class="btn btn-primary" id="btn-reshare" type="button">Reprendre le partage</button>
           </div>
         </div>
 
@@ -158,9 +144,16 @@
           <button class="ctl off" id="ctl-mic" type="button" aria-pressed="false"><svg class="i"><use href="#i-mic-off"/></svg><span class="ctl-label">Micro coupé</span><span class="meter"><i></i></span></button>
           <button class="ctl" id="ctl-sys" type="button" aria-pressed="true"><svg class="i"><use href="#i-volume"/></svg><span class="ctl-label">Son du PC</span></button>
           <button class="ctl" id="ctl-preset" type="button"><svg class="i"><use href="#i-gauge"/></svg><span class="ctl-label">Auto</span></button>
-          <button class="ctl" id="ctl-source" type="button"><svg class="i"><use href="#i-monitor"/></svg><span class="ctl-label">Changer de source</span></button>
+          <button class="ctl" id="ctl-mini" type="button" aria-pressed="false"><svg class="i"><use href="#i-pip"/></svg><span class="ctl-label">Mini-retour</span></button>
+          <button class="ctl" id="ctl-source" type="button"><svg class="i"><use href="#i-monitor"/></svg><span class="ctl-label">Changer d’écran</span></button>
           <button class="ctl" id="ctl-camera" type="button" hidden><svg class="i"><use href="#i-flip"/></svg><span class="ctl-label">Retourner</span></button>
           <button class="ctl" id="ctl-settings" type="button"><svg class="i"><use href="#i-sliders"/></svg><span class="ctl-label">Réglages</span></button>
+        </div>
+
+        <div class="notice" id="surface-warn" hidden>
+          <svg class="i"><use href="#i-alert"/></svg>
+          <span>Tu partages <b id="surface-warn-what">une seule fenêtre</b> : si tu passes sur Google ou une autre app, le spectateur ne le verra pas. Choisis <b>Écran entier</b> pour tout montrer.</span>
+          <button class="btn btn-ghost btn-sm" id="btn-surface-fix" type="button">Écran entier</button>
         </div>
 
         <div class="notice" id="audio-warn" hidden>
@@ -231,7 +224,9 @@
         <button class="btn btn-ghost" id="w-state-btn" type="button" hidden></button>
       </div>
 
-      <button class="unmute" id="w-unmute" type="button" hidden><svg class="i"><use href="#i-volume-x"/></svg>Touchez pour activer le son</button>
+      <span class="paused-pill" id="w-paused" hidden>Image en pause</span>
+
+      <button class="unmute" id="w-unmute" type="button" hidden><svg class="i"><use href="#i-volume-x"/></svg>Touche l’écran pour le son</button>
 
       <div class="react-picker" id="react-picker" hidden></div>
 

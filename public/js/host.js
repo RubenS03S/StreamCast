@@ -56,7 +56,7 @@ class Peer {
   constructor(id, info) {
     this.id = id;
     this.clientId = info.clientId || id;
-    this.name = info.name || 'Spectateur';
+    this.name = info.name || info.caps?.device || 'Spectateur';
     this.caps = info.caps || {};
     this.device = this.caps.device || '';
     this.pref = { quality: 'auto', game: 1, voice: 1 };
@@ -67,6 +67,8 @@ class Peer {
     this.params = Promise.resolve();
     this.stats = null;
     this.viewerStats = null;
+    this.thumb = null;
+    this.thumbAt = 0;
   }
 
   send(msg) {
@@ -120,7 +122,7 @@ class Peer {
 
   async onAnswer(sdp) {
     if (!this.pc || this.pc.signalingState !== 'have-local-offer') return;
-    const startKbps = Math.round(Math.min(12000, this.target().maxBitrate / 1000 / 2));
+    const startKbps = Math.round(Math.min(6000, this.target().maxBitrate / 1000 / 2));
     await this.pc.setRemoteDescription({ type: 'answer', sdp: tuneAnswerForSender(sdp, { programMid: this.programMid, startKbps }) });
     await this.applyParams();
   }
@@ -181,6 +183,13 @@ class Peer {
         break;
       case 'stats':
         this.viewerStats = { ...m, at: Date.now() };
+        break;
+      case 'thumb':
+        if (typeof m.url === 'string' && m.url.startsWith('data:image/jpeg;base64,') && m.url.length < 80000) {
+          this.thumb = m.url;
+          this.thumbAt = Date.now();
+          renderViewerView();
+        }
         break;
       case 'pref': {
         const quality = VIEWER_QUALITY[m.quality] ? m.quality : this.pref.quality;
@@ -278,17 +287,21 @@ class Peer {
     a.loss = (st.loss ?? 0) > 0.06 ? a.loss + 1 : 0;
     const viewerBad = !!vs && st.fps > 20 && (vs.fps < st.fps * 0.8 || vs.dropRate > 0.08 || vs.newFreezes > 0);
     a.viewer = viewerBad ? a.viewer + 1 : 0;
+    // The iPad's own connection (often Wi-Fi far from the box): lighter
+    // frames get through a weak link with fewer stutters.
+    const viewerNet = !!vs && ((vs.loss ?? 0) > 0.04 || (vs.jitterMs ?? 0) > 150);
+    a.net = viewerNet ? (a.net || 0) + 1 : 0;
 
-    if ((a.cpu >= 3 || a.bw >= 3 || a.loss >= 4 || a.viewer >= 3) && this.level < t.ladder.length - 1 && now - a.last > 2500) {
+    if ((a.cpu >= 3 || a.bw >= 3 || a.loss >= 4 || a.viewer >= 3 || a.net >= 4) && this.level < t.ladder.length - 1 && now - a.last > 2500) {
       this.level++;
       a.downs = a.downs.filter((x) => now - x < 120000);
       a.downs.push(now);
       a.hold = now + Math.min(120000, 15000 * a.downs.length);
-      Object.assign(a, { cpu: 0, bw: 0, loss: 0, viewer: 0, good: 0, last: now });
+      Object.assign(a, { cpu: 0, bw: 0, loss: 0, viewer: 0, net: 0, good: 0, last: now });
       this.applyParams();
       return;
     }
-    const healthy = st.limitation === 'none' && (st.loss ?? 0) < 0.02 && !viewerBad;
+    const healthy = st.limitation === 'none' && (st.loss ?? 0) < 0.02 && !viewerBad && !viewerNet;
     a.good = healthy ? a.good + 1 : 0;
     if (this.level > 0 && a.good >= 10 && now > a.hold) {
       const next = t.ladder[this.level - 1];
@@ -351,7 +364,22 @@ class Peer {
   }
 }
 
+// Connection quality of a spectateur, as measured on both ends.
+function netQuality(peer) {
+  const st = peer.stats;
+  const vs = peer.viewerStats && Date.now() - peer.viewerStats.at < 6000 ? peer.viewerStats : null;
+  if (!st) return null;
+  const loss = Math.max(st.loss ?? 0, vs?.loss ?? 0);
+  const rtt = (st.rtt ?? 0) * 1000;
+  const jitter = vs?.jitterMs ?? 0;
+  if (loss > 0.05 || rtt > 250 || jitter > 150 || (vs?.newFreezes ?? 0) > 0 || (vs?.dropRate ?? 0) > 0.1) return 'faible';
+  if (loss > 0.01 || rtt > 100 || jitter > 60) return 'moyen';
+  return 'bon';
+}
+
 // ================================================================ helpers
+const wantThumbs = () => S.live && (!!mini.win || document.visibilityState === 'visible');
+
 function hostState() {
   const p = preset();
   return {
@@ -361,6 +389,7 @@ function hostState() {
     preset: p.id,
     presetLabel: p.label,
     mode: S.mode,
+    thumbs: wantThumbs() ? 2500 : 0,
   };
 }
 
@@ -429,6 +458,8 @@ function useCapture(stream) {
   }
   S.sourceLost = false;
   $('#source-lost').hidden = true;
+  if (mini.video) mini.video.srcObject = new MediaStream([S.video]);
+  updateSurfaceWarning();
   updateSourceInfo();
   updateAudioWarning();
   broadcastState();
@@ -454,6 +485,15 @@ async function switchCamera() {
   S.facing = S.facing === 'user' ? 'environment' : 'user';
   S.video?.stop();
   await changeSource();
+}
+
+// Sharing a single window or tab means the spectateur loses the image as soon
+// as Ruben switches to another app: point him to "Écran entier".
+function updateSurfaceWarning() {
+  const surface = S.mode === 'screen' ? S.video?.getSettings().displaySurface : null;
+  const partial = surface === 'window' || surface === 'browser';
+  $('#surface-warn').hidden = !partial;
+  if (partial) $('#surface-warn-what').textContent = surface === 'window' ? 'une seule fenêtre' : 'un seul onglet';
 }
 
 function updateAudioWarning() {
@@ -517,6 +557,7 @@ function renderMicState() {
   btn.classList.toggle('off', !on);
   setIcon(btn, on ? 'mic' : 'mic-off');
   $('#ctl-mic .ctl-label').textContent = on ? 'Micro activé' : 'Micro coupé';
+  renderMini();
 }
 
 function setGame(on) {
@@ -685,6 +726,7 @@ async function endLive({ ask = true } = {}) {
   for (const peer of [...S.peers.values()]) peer.close('end', { silent: true });
   S.poller?.stop();
   S.stopStats?.();
+  closeMini();
   api('end', { code: S.code, token: S.token }).catch(() => {});
   [S.video, S.game].forEach((t) => t?.stop());
   S.mic?.stop();
@@ -759,6 +801,7 @@ async function statsTick() {
   const handshaking = [...S.peers.values()].some((p) => p.state === 'connecting');
   if (S.poller) S.poller.idle = peerCount() && !handshaking ? 4000 : 2000;
   renderHostStats(best);
+  renderViewerView();
   if (best?.srcFps) updateSourceInfo(best.srcFps);
 }
 
@@ -789,7 +832,8 @@ const peerCount = () => [...S.peers.values()].filter((p) => p.state === 'live').
 function timerTick() {
   if (!S.live) return;
   $('#host-timer').textContent = fmtDuration(Date.now() - S.startedAt);
-  setTimeout(timerTick, 1000);
+  renderMini();
+  later(timerTick, 1000);
 }
 
 function meterLoop() {
@@ -814,12 +858,14 @@ function renderViewers() {
   const rows = peers.map((peer) => {
     const st = peer.stats;
     const vs = peer.viewerStats;
-    let quality = 'Connexion…';
+    let quality = '';
+    let network = 'Connexion…';
     let tone = 'wait';
     if (peer.state === 'live' && st?.height) {
-      quality = `${heightLabel(st.height)} · ${Math.round(vs?.fps ?? st.fps ?? 0)} FPS · ${fmtBitrate(st.bitrate)}`;
-      const fps = vs?.fps ?? st.fps ?? 0;
-      tone = (st.loss ?? 0) > 0.05 || (vs && vs.dropRate > 0.1) ? 'bad' : fps < preset().fps * 0.8 && st.limitation !== 'none' ? 'mid' : 'good';
+      const net = netQuality(peer) || 'bon';
+      quality = `${heightLabel(vs?.h || st.height)} · ${Math.round(vs?.fps ?? st.fps ?? 0)} FPS`;
+      network = `Réseau ${net}`;
+      tone = { bon: 'good', moyen: 'mid', faible: 'bad' }[net];
     }
     const row =
       peer.row ||
@@ -827,7 +873,7 @@ function renderViewers() {
         'li',
         { class: 'viewer' },
         h('span', { class: 'avatar' }),
-        h('div', { class: 'viewer-info' }, h('b'), h('small')),
+        h('div', { class: 'viewer-info' }, h('b'), h('small'), h('small', { class: 'viewer-net' })),
         h('span', { class: 'viewer-mic' }, icon('mic')),
         h('span', { class: 'viewer-dot' }),
         h('button', { class: 'icon-btn sm ghost', title: 'Retirer du live', 'aria-label': 'Retirer du live' }, icon('x')),
@@ -844,6 +890,9 @@ function renderViewers() {
     row.querySelector('.avatar').textContent = (peer.name[0] || '?').toUpperCase();
     row.querySelector('.viewer-info b').textContent = peer.name;
     row.querySelector('.viewer-info small').textContent = [peer.device, quality].filter(Boolean).join(' · ');
+    const netEl = row.querySelector('.viewer-net');
+    netEl.textContent = network;
+    netEl.dataset.tone = tone;
     row.querySelector('.viewer-mic').hidden = !peer.micOn;
     row.querySelector('.viewer-dot').dataset.tone = tone;
     return row;
@@ -866,6 +915,7 @@ function addChat(log, { name, text }, self = false) {
 
 function receiveChat(msg, fromPeer) {
   addChat($('#host-chat-log'), msg);
+  miniChat(msg);
   broadcast({ t: 'chat', name: msg.name, text: msg.text }, fromPeer);
   if (S.settings.sounds) chime('message');
   notify(msg.name, msg.text);
@@ -982,6 +1032,177 @@ function bindRange(sel, key, apply) {
   input.addEventListener('change', saveSettings);
 }
 
+// ============================================================ retour
+// "Mini-retour": a small always-on-top window (Document Picture-in-Picture)
+// showing Ruben's capture, what the spectateur sees, the stats and the mic,
+// so he can check the stream without leaving his game.
+const mini = { win: null, video: null, chatCancel: null };
+
+const MINI_CSS = `
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:#000;color:#f4f4f8;overflow:hidden;-webkit-font-smoothing:antialiased;
+  font:13px/1.35 -apple-system,BlinkMacSystemFont,"Segoe UI Variable Text","Segoe UI",system-ui,sans-serif}
+[hidden]{display:none!important}
+.i{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
+.mini{position:relative;height:100%}
+video{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#000}
+.m-lost{position:absolute;inset:0;display:grid;place-items:center;padding:20px;background:rgba(8,8,13,.88);font-weight:700;text-align:center}
+.m-top{position:absolute;top:0;left:0;right:0;display:flex;align-items:center;gap:10px;padding:8px 10px 18px;background:linear-gradient(rgba(0,0,0,.65),transparent)}
+.badge-live{display:inline-flex;align-items:center;gap:6px;height:20px;padding:0 7px;border-radius:6px;background:#ff3b5c;font-size:10.5px;font-weight:800;letter-spacing:.08em}
+.badge-live i{width:6px;height:6px;border-radius:50%;background:#fff;animation:pulse 1.6s ease-in-out infinite}
+@keyframes pulse{50%{opacity:.35}}
+.m-meta{display:inline-flex;align-items:center;gap:5px;font-weight:650;font-variant-numeric:tabular-nums}
+.m-thumb{position:absolute;top:8px;right:8px;margin:0;width:36%;border-radius:8px;overflow:hidden;border:1px solid rgba(255,255,255,.25);box-shadow:0 6px 18px rgba(0,0,0,.55);background:#000;cursor:pointer}
+.m-thumb.big{width:72%}
+.m-thumb img{display:block;width:100%}
+.m-thumb figcaption{position:absolute;left:0;right:0;bottom:0;padding:2px 6px;background:rgba(0,0,0,.6);font-size:10.5px;font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.m-chat{position:absolute;left:8px;right:8px;bottom:46px;padding:6px 9px;border-radius:10px;background:rgba(12,12,18,.88);border:1px solid rgba(255,255,255,.1);overflow-wrap:anywhere}
+.m-chat b{color:#a597ff;margin-right:6px}
+.m-bar{position:absolute;left:0;right:0;bottom:0;display:flex;align-items:center;gap:8px;padding:18px 8px 7px 10px;background:linear-gradient(transparent,rgba(0,0,0,.8))}
+.m-dot{width:8px;height:8px;border-radius:50%;background:#6e6e82;flex:none}
+.m-dot[data-tone=good]{background:#34d399}.m-dot[data-tone=mid]{background:#fbbf24}.m-dot[data-tone=bad]{background:#ff5a6e}
+.m-stats{flex:1;min-width:0;font-weight:650;font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.m-btn{display:grid;place-items:center;flex:none;width:32px;height:32px;border-radius:50%;border:none;background:rgba(255,255,255,.14);color:#fff;cursor:pointer}
+.m-btn.off{color:#ff6b81}
+`;
+
+const MINI_HTML = `
+<div class="mini">
+  <video id="m-video" muted autoplay playsinline></video>
+  <div class="m-lost" id="m-lost" hidden>Partage arrêté · reviens sur StreamCast pour le relancer</div>
+  <div class="m-top">
+    <span class="badge-live"><i></i>LIVE</span>
+    <span class="m-meta" id="m-timer">00:00</span>
+    <span class="m-meta"><svg class="i"><use href="#i-users"/></svg><span id="m-count">0</span></span>
+  </div>
+  <figure class="m-thumb" id="m-thumb" title="Ce que voit le spectateur" hidden><img id="m-thumb-img" alt=""><figcaption id="m-thumb-cap"></figcaption></figure>
+  <div class="m-chat" id="m-chat" hidden></div>
+  <div class="m-bar">
+    <i class="m-dot" id="m-dot" data-tone="wait"></i>
+    <span class="m-stats" id="m-stats"></span>
+    <button class="m-btn" id="m-mic" type="button"><svg class="i"><use href="#i-mic-off"/></svg></button>
+  </div>
+</div>`;
+
+async function openMini() {
+  if (mini.win) {
+    mini.win.focus();
+    return;
+  }
+  if (!('documentPictureInPicture' in window)) {
+    try {
+      await $('#preview').requestPictureInPicture();
+    } catch {
+      toast('Mini-retour indisponible dans ce navigateur : utilise Chrome ou Edge', { type: 'warn' });
+    }
+    return;
+  }
+  let win;
+  try {
+    win = await window.documentPictureInPicture.requestWindow({ width: 440, height: 300 });
+  } catch {
+    toast('Impossible d’ouvrir le mini-retour', { type: 'warn' });
+    return;
+  }
+  mini.win = win;
+  const doc = win.document;
+  doc.title = 'StreamCast';
+  const style = doc.createElement('style');
+  style.textContent = MINI_CSS;
+  doc.head.append(style);
+  doc.body.append($('#sprite').cloneNode(true));
+  doc.body.insertAdjacentHTML('beforeend', MINI_HTML);
+  mini.video = doc.getElementById('m-video');
+  if (S.video) mini.video.srcObject = new MediaStream([S.video]);
+  mini.video.play().catch(() => {});
+  doc.getElementById('m-mic').addEventListener('click', () => setMic(!(S.settings.micOn && S.mic)));
+  doc.getElementById('m-thumb').addEventListener('click', (e) => e.currentTarget.classList.toggle('big'));
+  win.addEventListener('pagehide', () => {
+    mini.win = null;
+    mini.video = null;
+    $('#ctl-mini').setAttribute('aria-pressed', 'false');
+    broadcastState();
+  });
+  $('#ctl-mini').setAttribute('aria-pressed', 'true');
+  renderMini();
+  broadcastState();
+}
+
+function closeMini() {
+  mini.win?.close();
+  if (document.pictureInPictureElement) document.exitPictureInPicture().catch(() => {});
+}
+
+function freshThumbPeer() {
+  const now = Date.now();
+  return [...S.peers.values()].find((p) => p.state === 'live' && p.thumb && now - p.thumbAt < 10000) || null;
+}
+
+function viewerSummary(peer) {
+  const vs = peer.viewerStats;
+  const st = peer.stats;
+  const height = vs?.h || st?.height;
+  if (!height) return '';
+  const fps = Math.round(vs?.fps ?? st?.fps ?? 0);
+  return `${heightLabel(height)} · ${fps} FPS${vs?.latencyMs ? ` · ~${vs.latencyMs} ms` : ''}`;
+}
+
+// Dashboard: small picture of what the spectateur really sees.
+function renderViewerView() {
+  const peer = freshThumbPeer();
+  $('#viewer-view').hidden = !peer;
+  if (peer) {
+    const img = $('#viewer-view-img');
+    if (img.getAttribute('src') !== peer.thumb) img.src = peer.thumb;
+    $('#viewer-view-cap').textContent = [`Vue de ${peer.name}`, viewerSummary(peer)].filter(Boolean).join(' · ');
+  }
+  renderMini();
+}
+
+function renderMini() {
+  const doc = mini.win?.document;
+  if (!doc) return;
+  const el = (id) => doc.getElementById(id);
+  el('m-timer').textContent = fmtDuration(Date.now() - S.startedAt);
+  el('m-count').textContent = peerCount();
+  const on = !!(S.settings.micOn && S.mic);
+  const mic = el('m-mic');
+  mic.classList.toggle('off', !on);
+  mic.querySelector('use').setAttribute('href', on ? '#i-mic' : '#i-mic-off');
+  mic.title = on ? 'Couper le micro' : 'Activer le micro';
+  el('m-lost').hidden = !S.sourceLost;
+
+  const peer = [...S.peers.values()].find((p) => p.state === 'live');
+  let text = peer ? 'Connexion…' : 'En attente d’un spectateur';
+  let tone = 'wait';
+  if (peer?.stats?.height) {
+    text = `${viewerSummary(peer)} · ${fmtBitrate(peer.stats.bitrate)}`;
+    tone = { bon: 'good', moyen: 'mid', faible: 'bad' }[netQuality(peer)] || 'wait';
+  }
+  el('m-stats').textContent = text;
+  el('m-dot').dataset.tone = tone;
+
+  const tp = freshThumbPeer();
+  el('m-thumb').hidden = !tp;
+  if (tp) {
+    const img = el('m-thumb-img');
+    if (img.getAttribute('src') !== tp.thumb) img.src = tp.thumb;
+    el('m-thumb-cap').textContent = tp.name;
+  }
+}
+
+function miniChat({ name, text }) {
+  const doc = mini.win?.document;
+  if (!doc) return;
+  const box = doc.getElementById('m-chat');
+  const b = doc.createElement('b');
+  b.textContent = name;
+  box.replaceChildren(b, doc.createTextNode(text));
+  box.hidden = false;
+  mini.chatCancel?.();
+  mini.chatCancel = later(() => (box.hidden = true), 7000);
+}
+
 // ============================================================== view glue
 let showView = () => {};
 
@@ -1032,6 +1253,10 @@ export function initHost({ show }) {
   $('#ctl-camera').addEventListener('click', switchCamera);
   $('#ctl-settings').addEventListener('click', openSettings);
   $('#btn-reshare').addEventListener('click', changeSource);
+  $('#btn-surface-fix').addEventListener('click', changeSource);
+  $('#ctl-mini').addEventListener('click', openMini);
+  // Snapshots from the spectateur are only needed while Ruben can see them.
+  document.addEventListener('visibilitychange', () => S.live && broadcastState());
   $('#btn-audio-retry').addEventListener('click', changeSource);
   $('#btn-preview-toggle').addEventListener('click', () => {
     S.settings.preview = !S.settings.preview;
